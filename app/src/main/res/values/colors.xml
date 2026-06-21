@@ -1,0 +1,15 @@
+<resources>
+    <color name="pink_canvas">#FFF7F9</color>
+    <color name="pink_soft">#FFE8EE</color>
+    <color name="pink_line">#F7DCE4</color>
+    <color name="pink_primary">#E9829E</color>
+    <color name="pink_dark">#C96682</color>
+    <color name="text_primary">#3D3437</color>
+    <color name="text_secondary">#9B858C</color>
+    <color name="income_green">#4FAE82</color>
+    <color name="white">#FFFFFF</color>
+    <color name="glass_white">#D9FFFFFF</color>
+    <color name="glass_stroke">#BFFFFFFF</color>
+    <color name="progress_track">#F7DCE4</color>
+    <color name="progress_expected">#F3BBCB</color>
+</resources>

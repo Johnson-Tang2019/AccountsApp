@@ -1,0 +1,43 @@
+# Gradle and Kotlin caches
+.gradle/
+.kotlin/
+**/build/
+
+# Android Studio / IntelliJ IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+
+# Local Android SDK and machine-specific settings
+local.properties
+
+# Signing credentials and generated packages
+*.jks
+*.keystore
+keystore.properties
+*.apk
+*.aab
+
+# Native build outputs
+.cxx/
+.externalNativeBuild/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+*.swp
+*~
+
+# OS metadata
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Codex local state and uploaded reference attachments
+.agents/
+.codex/
+.codex-remote-attachments/
+

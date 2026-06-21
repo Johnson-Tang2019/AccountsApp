@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:background="@color/pink_canvas" android:orientation="vertical">
+
+    <LinearLayout android:id="@+id/settingsHeader" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:minHeight="72dp" android:background="@drawable/bg_header" android:gravity="center_vertical"
+        android:paddingStart="18dp" android:paddingTop="15dp" android:paddingEnd="18dp" android:paddingBottom="15dp">
+        <TextView android:id="@+id/backButton" android:layout_width="42dp" android:layout_height="42dp"
+            android:background="@drawable/bg_glass_button" android:gravity="center" android:text="‹"
+            android:textColor="@color/pink_dark" android:textSize="30sp" />
+        <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="14dp"
+            android:layout_weight="1" android:text="设置" android:textColor="@color/text_primary"
+            android:textSize="23sp" android:textStyle="bold" />
+    </LinearLayout>
+
+    <ScrollView android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:fillViewport="true">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="vertical" android:padding="18dp">
+
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="预算与余额" android:textColor="@color/text_primary" android:textSize="17sp" android:textStyle="bold" />
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="10dp"
+                app:cardBackgroundColor="@color/glass_white" app:cardCornerRadius="22dp" app:cardElevation="0dp"
+                app:strokeColor="@color/glass_stroke" app:strokeWidth="1dp">
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="18dp">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="固定月度预算" android:textColor="@color/text_secondary" android:textSize="12sp" />
+                    <EditText android:id="@+id/settingBudget" android:layout_width="match_parent" android:layout_height="52dp"
+                        android:layout_marginTop="4dp" android:backgroundTint="@color/pink_primary" android:hint="5000"
+                        android:inputType="numberDecimal" android:textColor="@color/text_primary" android:textSize="20sp" />
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="18dp" android:text="当前余额" android:textColor="@color/text_secondary" android:textSize="12sp" />
+                    <EditText android:id="@+id/settingBalance" android:layout_width="match_parent" android:layout_height="52dp"
+                        android:layout_marginTop="4dp" android:backgroundTint="@color/pink_primary" android:hint="0"
+                        android:inputType="numberDecimal|numberSigned" android:textColor="@color/text_primary" android:textSize="20sp" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:layout_marginTop="24dp" android:text="预算节奏" android:textColor="@color/text_primary" android:textSize="17sp" android:textStyle="bold" />
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="10dp"
+                app:cardBackgroundColor="@color/glass_white" app:cardCornerRadius="22dp" app:cardElevation="0dp"
+                app:strokeColor="@color/glass_stroke" app:strokeWidth="1dp">
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="18dp">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:text="期望剩余比例" android:textColor="@color/text_primary" android:textSize="15sp" android:textStyle="bold" />
+                    <TextView android:id="@+id/remainingRatioText" android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp" android:textColor="@color/pink_dark" android:textSize="13sp" />
+                    <SeekBar android:id="@+id/remainingRatio" android:layout_width="match_parent" android:layout_height="44dp"
+                        android:layout_marginTop="8dp" android:max="90" android:progress="20"
+                        android:progressTint="@color/pink_primary" android:thumbTint="@color/pink_dark" />
+                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:text="浅粉进度会按日期均摊可使用预算，并为这部分金额留到月底。"
+                        android:textColor="@color/text_secondary" android:textSize="12sp" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:layout_marginTop="24dp" android:text="悬浮图标" android:textColor="@color/text_primary"
+                android:textSize="17sp" android:textStyle="bold" />
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="10dp"
+                app:cardBackgroundColor="@color/glass_white" app:cardCornerRadius="22dp" app:cardElevation="0dp"
+                app:strokeColor="@color/glass_stroke" app:strokeWidth="1dp">
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:gravity="center_vertical" android:orientation="horizontal" android:padding="18dp">
+                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                            android:text="记账成功动画" android:textColor="@color/text_primary" android:textSize="15sp" android:textStyle="bold" />
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="4dp"
+                            android:text="成功入账时播放上浮、轻摆和回弹动画"
+                            android:textColor="@color/text_secondary" android:textSize="11sp" />
+                    </LinearLayout>
+                    <com.google.android.material.switchmaterial.SwitchMaterial android:id="@+id/overlayAnimationSwitch"
+                        android:layout_width="wrap_content" android:layout_height="wrap_content" android:checked="true"
+                        app:thumbTint="@color/pink_primary" app:trackTint="@color/pink_line" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.button.MaterialButton android:id="@+id/saveSettings"
+                android:layout_width="match_parent" android:layout_height="54dp" android:layout_marginTop="26dp"
+                android:text="保存设置" android:textColor="@color/white" android:textSize="16sp"
+                app:backgroundTint="@color/pink_primary" app:cornerRadius="18dp" />
+
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:layout_marginTop="26dp" android:text="关于应用" android:textColor="@color/text_primary"
+                android:textSize="17sp" android:textStyle="bold" />
+            <com.google.android.material.card.MaterialCardView android:id="@+id/openRecognitionLog"
+                android:layout_width="match_parent" android:layout_height="64dp" android:layout_marginTop="10dp"
+                android:clickable="true" android:focusable="true" android:foreground="?attr/selectableItemBackground"
+                app:cardBackgroundColor="@color/glass_white" app:cardCornerRadius="20dp" app:cardElevation="0dp"
+                app:strokeColor="@color/glass_stroke" app:strokeWidth="1dp">
+                <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent" android:gravity="center_vertical" android:paddingHorizontal="18dp">
+                    <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+                        android:text="识别诊断日志" android:textColor="@color/text_primary" android:textSize="15sp" android:textStyle="bold" />
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="查看排除原因  ›"
+                        android:textColor="@color/pink_dark" android:textSize="12sp" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="10dp" android:layout_marginBottom="20dp"
+                app:cardBackgroundColor="@color/glass_white" app:cardCornerRadius="22dp" app:cardElevation="0dp"
+                app:strokeColor="@color/glass_stroke" app:strokeWidth="1dp">
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:gravity="center_vertical" android:orientation="horizontal" android:padding="18dp">
+                    <ImageView android:layout_width="52dp" android:layout_height="52dp" android:contentDescription="应用图标"
+                        android:src="@drawable/app_icon" />
+                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="14dp"
+                        android:layout_weight="1" android:orientation="vertical">
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="自动记账"
+                            android:textColor="@color/text_primary" android:textSize="16sp" android:textStyle="bold" />
+                        <TextView android:id="@+id/versionText" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp" android:text="版本 1.0.2（构建 3）"
+                            android:textColor="@color/pink_dark" android:textSize="12sp" />
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp" android:text="本地优先 · 数据仅保存在设备中"
+                            android:textColor="@color/text_secondary" android:textSize="11sp" />
+                    </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>
