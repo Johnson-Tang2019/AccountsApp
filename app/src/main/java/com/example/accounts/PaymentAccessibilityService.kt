@@ -12,12 +12,16 @@ import android.graphics.PixelFormat
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
+import android.view.MotionEvent
+import android.view.ViewConfiguration
 import android.view.WindowManager
 import android.view.View
 import android.widget.ImageView
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import java.security.MessageDigest
+import kotlin.math.abs
 
 class PaymentAccessibilityService : AccessibilityService() {
     private val allowedPackages = mapOf(
@@ -233,6 +237,10 @@ class PaymentAccessibilityService : AccessibilityService() {
         if (overlayView != null) return
         val density = resources.displayMetrics.density
         val size = (42 * density).toInt()
+        val screenWidth = resources.displayMetrics.widthPixels
+        val screenHeight = resources.displayMetrics.heightPixels
+        val positionPrefs = getSharedPreferences("overlay_position", MODE_PRIVATE)
+        val windowManager = getSystemService(WindowManager::class.java)
         val bubble = ImageView(this).apply {
             setImageResource(R.drawable.overlay_icon)
             scaleType = ImageView.ScaleType.CENTER_CROP
@@ -240,10 +248,6 @@ class PaymentAccessibilityService : AccessibilityService() {
             alpha = 0.42f
             contentDescription = "自动记账服务运行中，点击查看日志"
             background = null
-            setOnClickListener {
-                startActivity(Intent(this@PaymentAccessibilityService, RecognitionLogActivity::class.java)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            }
         }
         val params = WindowManager.LayoutParams(
             size,
@@ -252,11 +256,65 @@ class PaymentAccessibilityService : AccessibilityService() {
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
             PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = Gravity.END or Gravity.CENTER_VERTICAL
-            x = (8 * density).toInt()
+            gravity = Gravity.TOP or Gravity.START
+            x = positionPrefs.getInt("x", screenWidth - size - (8 * density).toInt()).coerceIn(0, screenWidth - size)
+            y = positionPrefs.getInt("y", (screenHeight - size) / 2).coerceIn(0, screenHeight - size)
+        }
+        val touchSlop = ViewConfiguration.get(this).scaledTouchSlop
+        var downX = 0f
+        var downY = 0f
+        var startX = 0
+        var startY = 0
+        var dragging = false
+        var moved = false
+        val beginDrag = Runnable {
+            dragging = true
+            bubble.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+            bubble.animate().alpha(0.9f).scaleX(1.15f).scaleY(1.15f).setDuration(150).start()
+        }
+        bubble.setOnTouchListener { _, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    downX = event.rawX; downY = event.rawY
+                    startX = params.x; startY = params.y
+                    dragging = false; moved = false
+                    handler.postDelayed(beginDrag, 500)
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = event.rawX - downX
+                    val dy = event.rawY - downY
+                    if (abs(dx) > touchSlop || abs(dy) > touchSlop) moved = true
+                    if (dragging) {
+                        params.x = (startX + dx.toInt()).coerceIn(0, screenWidth - size)
+                        params.y = (startY + dy.toInt()).coerceIn(0, screenHeight - size)
+                        windowManager.updateViewLayout(bubble, params)
+                    } else if (moved) {
+                        handler.removeCallbacks(beginDrag)
+                    }
+                    true
+                }
+                MotionEvent.ACTION_UP -> {
+                    handler.removeCallbacks(beginDrag)
+                    if (dragging) {
+                        positionPrefs.edit().putInt("x", params.x).putInt("y", params.y).apply()
+                        bubble.animate().alpha(0.42f).scaleX(1f).scaleY(1f).setDuration(220).start()
+                    } else if (!moved) {
+                        startActivity(Intent(this@PaymentAccessibilityService, RecognitionLogActivity::class.java)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    }
+                    true
+                }
+                MotionEvent.ACTION_CANCEL -> {
+                    handler.removeCallbacks(beginDrag)
+                    bubble.animate().alpha(0.42f).scaleX(1f).scaleY(1f).setDuration(150).start()
+                    true
+                }
+                else -> false
+            }
         }
         try {
-            getSystemService(WindowManager::class.java).addView(bubble, params)
+            windowManager.addView(bubble, params)
             overlayView = bubble
             RecognitionLogger.log(this, "overlay_visible", "服务悬浮标记已显示，自动记账正在运行", 0)
         } catch (error: Exception) {

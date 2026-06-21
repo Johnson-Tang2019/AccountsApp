@@ -92,6 +92,9 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<android.view.View>(R.id.importXlsx).setOnClickListener {
             importLauncher.launch(arrayOf(XLSX_MIME, "application/zip"))
         }
+        findViewById<android.view.View>(R.id.manualUpdate).setOnClickListener {
+            UpdateUi.checkForUpdates(this, manual = true)
+        }
         findViewById<android.view.View>(R.id.saveSettings).setOnClickListener {
             val budgetValue = budget.text.toString().toFloatOrNull()
             val balanceValue = balance.text.toString().toFloatOrNull()

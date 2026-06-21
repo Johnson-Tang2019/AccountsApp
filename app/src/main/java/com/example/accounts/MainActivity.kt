@@ -42,6 +42,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.filterAll).setOnClickListener { filter = null; refresh() }
         findViewById<View>(R.id.filterExpense).setOnClickListener { filter = "expense"; refresh() }
         findViewById<View>(R.id.filterIncome).setOnClickListener { filter = "income"; refresh() }
+        UpdateUi.checkForUpdates(this, manual = false)
     }
 
     private fun requestNotificationPermissionIfNeeded() {
