@@ -6,11 +6,17 @@ import android.animation.ObjectAnimator
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.app.KeyguardManager
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.Color
 import android.graphics.PixelFormat
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
@@ -36,6 +42,15 @@ class PaymentAccessibilityService : AccessibilityService() {
     private var pendingPackage: String? = null
     private val parseTask = Runnable { pendingPackage?.let(::parseCurrentWindow) }
     private var overlayView: ImageView? = null
+    private var screenReceiverRegistered = false
+    private val screenReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.action) {
+                Intent.ACTION_SCREEN_OFF -> setOverlayVisible(false)
+                Intent.ACTION_SCREEN_ON, Intent.ACTION_USER_PRESENT -> updateOverlayForScreenState()
+            }
+        }
+    }
     private val heartbeatTask = object : Runnable {
         override fun run() {
             getSharedPreferences("service_state", MODE_PRIVATE).edit()
@@ -51,7 +66,9 @@ class PaymentAccessibilityService : AccessibilityService() {
         RecognitionLogger.log(this, "service_connected", "无障碍服务已连接，等待支付宝/微信事件", 0)
         handler.removeCallbacks(heartbeatTask)
         heartbeatTask.run()
+        registerScreenReceiver()
         showServiceOverlay()
+        updateOverlayForScreenState()
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -322,6 +339,28 @@ class PaymentAccessibilityService : AccessibilityService() {
         }
     }
 
+    private fun registerScreenReceiver() {
+        if (screenReceiverRegistered) return
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_USER_PRESENT)
+        }
+        if (Build.VERSION.SDK_INT >= 33) registerReceiver(screenReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        else @Suppress("DEPRECATION") registerReceiver(screenReceiver, filter)
+        screenReceiverRegistered = true
+    }
+
+    private fun updateOverlayForScreenState() {
+        val interactive = getSystemService(PowerManager::class.java).isInteractive
+        val locked = getSystemService(KeyguardManager::class.java).isKeyguardLocked
+        setOverlayVisible(interactive && !locked)
+    }
+
+    private fun setOverlayVisible(visible: Boolean) {
+        overlayView?.visibility = if (visible) View.VISIBLE else View.GONE
+    }
+
     private fun animateOverlaySuccess() {
         if (!getSharedPreferences("budget_settings", MODE_PRIVATE).getBoolean("overlay_animation_enabled", true)) return
         val icon = overlayView ?: return
@@ -354,6 +393,10 @@ class PaymentAccessibilityService : AccessibilityService() {
             try { getSystemService(WindowManager::class.java).removeView(it) } catch (_: Exception) { }
         }
         overlayView = null
+        if (screenReceiverRegistered) {
+            try { unregisterReceiver(screenReceiver) } catch (_: Exception) { }
+            screenReceiverRegistered = false
+        }
         RecognitionLogger.log(this, "service_destroyed", "无障碍服务已停止", 0)
         super.onDestroy()
     }

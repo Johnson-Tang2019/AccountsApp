@@ -62,6 +62,7 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() { super.onResume(); refresh() }
 
     private fun refresh() {
+        updateFilterSelection()
         val calendar = Calendar.getInstance()
         findViewById<TextView>(R.id.monthTitle).text = SimpleDateFormat("yyyy 年 M 月", Locale.CHINA).format(calendar.time)
         calendar.set(Calendar.DAY_OF_MONTH, 1); calendar.set(Calendar.HOUR_OF_DAY, 0); calendar.set(Calendar.MINUTE, 0); calendar.set(Calendar.SECOND, 0); calendar.set(Calendar.MILLISECOND, 0)
@@ -119,6 +120,19 @@ class MainActivity : AppCompatActivity() {
                 .setNegativeButton("取消", null).setPositiveButton("删除") { _, _ -> db.delete(rows[position].id); refresh() }.create()
             PinkDialogs.show(deleteDialog)
             true
+        }
+    }
+
+    private fun updateFilterSelection() {
+        listOf(
+            R.id.filterAll to (filter == null),
+            R.id.filterExpense to (filter == "expense"),
+            R.id.filterIncome to (filter == "income")
+        ).forEach { (id, selected) ->
+            findViewById<TextView>(id).apply {
+                setBackgroundResource(if (selected) R.drawable.bg_filter_selected else R.drawable.bg_category)
+                setTextColor(getColor(if (selected) R.color.white else R.color.text_secondary))
+            }
         }
     }
 
