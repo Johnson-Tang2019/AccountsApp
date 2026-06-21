@@ -8,7 +8,6 @@ import android.os.Build
 import android.Manifest
 import android.content.pm.PackageManager
 import android.provider.Settings
-import android.text.InputType
 import android.view.View
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
@@ -152,29 +151,24 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showRecordDialog(record: PaymentRecord?) {
-        val pad = (20 * resources.displayMetrics.density).toInt()
-        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(pad, 0, pad, 0) }
-        val merchant = EditText(this).apply { hint = "名称"; setText(record?.merchant.orEmpty()) }
-        val amount = EditText(this).apply {
-            hint = "金额"
-            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
-            if (record != null) setText(money.format(record.amount))
-        }
-        val kinds = RadioGroup(this).apply {
-            orientation = RadioGroup.HORIZONTAL
-            addView(RadioButton(this@MainActivity).apply { id = View.generateViewId(); text = "支出"; isChecked = record?.kind != "income"; tag = "expense" })
-            addView(RadioButton(this@MainActivity).apply { id = View.generateViewId(); text = "收入"; isChecked = record?.kind == "income"; tag = "income" })
-        }
+        val box = layoutInflater.inflate(R.layout.dialog_record, null)
+        val title = box.findViewById<TextView>(R.id.dialogRecordTitle)
+        val subtitle = box.findViewById<TextView>(R.id.dialogRecordSubtitle)
+        val merchant = box.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.recordMerchant)
+        val amount = box.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.recordAmount)
+        val kinds = box.findViewById<com.google.android.material.button.MaterialButtonToggleGroup>(R.id.recordKindToggle)
+        val categories = box.findViewById<AutoCompleteTextView>(R.id.recordCategory)
+        val note = box.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.recordNote)
+        title.text = if (record == null) "记一笔" else "修改记录"
+        subtitle.text = if (record == null) "记录此刻的收支" else "调整后余额和统计会同步更新"
+        merchant.setText(record?.merchant.orEmpty())
+        if (record != null) amount.setText(money.format(record.amount))
+        kinds.check(if (record?.kind == "income") R.id.recordIncome else R.id.recordExpense)
         val categoryValues = listOf("餐饮", "购物", "交通", "居住", "娱乐", "医疗", "工资", "红包", "自动记账", "其他")
-        val categories = Spinner(this).apply {
-            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, categoryValues)
-            val selected = record?.category?.let(categoryValues::indexOf)?.takeIf { it >= 0 } ?: categoryValues.lastIndex
-            setSelection(selected)
-        }
-        val note = EditText(this).apply { hint = "备注（可选）"; setText(record?.note.orEmpty()) }
-        box.addView(merchant); box.addView(amount); box.addView(kinds); box.addView(categories); box.addView(note)
+        categories.setAdapter(ArrayAdapter(this, android.R.layout.simple_dropdown_item_1line, categoryValues))
+        categories.setText(record?.category?.takeIf(categoryValues::contains) ?: "其他", false)
+        note.setText(record?.note.orEmpty())
         val builder = AlertDialog.Builder(this)
-            .setTitle(if (record == null) "记一笔" else "修改记录")
             .setView(box)
             .setNegativeButton("取消", null)
             .setPositiveButton("保存", null)
@@ -184,9 +178,9 @@ class MainActivity : AppCompatActivity() {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val value = amount.text.toString().toDoubleOrNull()
                 if (value == null || value <= 0) { amount.error = "请输入正确金额"; return@setOnClickListener }
-                val kind = kinds.findViewById<RadioButton>(kinds.checkedRadioButtonId).tag.toString()
+                val kind = if (kinds.checkedButtonId == R.id.recordIncome) "income" else "expense"
                 val name = merchant.text.toString().trim()
-                val category = categories.selectedItem.toString()
+                val category = categories.text.toString().takeIf(categoryValues::contains) ?: "其他"
                 val memo = note.text.toString().trim()
                 if (record == null) db.insertManual(name, value, kind, category, memo)
                 else db.update(record.id, name, value, kind, category, memo)
