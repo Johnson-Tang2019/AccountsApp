@@ -5,6 +5,7 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import java.util.UUID
+import java.security.MessageDigest
 
 data class PaymentRecord(
     val id: Long,
@@ -75,6 +76,38 @@ class AccountDb(context: Context) : SQLiteOpenHelper(context, "accounts.db", nul
             while (c.moveToNext()) result += PaymentRecord(c.getLong(0), c.getString(1), c.getDouble(2), c.getString(3), c.getLong(4), c.getString(5), c.getString(6), c.getString(7))
         }
         return result
+    }
+
+    fun allRecords(): List<PaymentRecord> {
+        val result = mutableListOf<PaymentRecord>()
+        readableDatabase.rawQuery(
+            "SELECT id,merchant,amount,source,paid_at,kind,category,note FROM payments ORDER BY paid_at ASC",
+            null
+        ).use { c ->
+            while (c.moveToNext()) result += PaymentRecord(
+                c.getLong(0), c.getString(1), c.getDouble(2), c.getString(3),
+                c.getLong(4), c.getString(5), c.getString(6), c.getString(7)
+            )
+        }
+        return result
+    }
+
+    fun insertImported(record: ImportedRecord): Boolean {
+        val alreadyExists = readableDatabase.rawQuery(
+            "SELECT 1 FROM payments WHERE paid_at=? AND kind=? AND merchant=? AND ABS(amount-?)<0.001 LIMIT 1",
+            arrayOf(record.paidAt.toString(), record.kind, record.merchant, record.amount.toString())
+        ).use { it.moveToFirst() }
+        if (alreadyExists) return false
+        val identity = listOf(
+            "xlsx", record.paidAt, record.kind, record.category, record.merchant,
+            record.amount, record.source, record.note
+        ).joinToString("|")
+        val fingerprint = MessageDigest.getInstance("SHA-256").digest(identity.toByteArray())
+            .joinToString("") { "%02x".format(it) }
+        return insertRecord(
+            record.merchant, record.amount, record.source, record.paidAt,
+            record.kind, record.category, record.note, fingerprint
+        )
     }
 
     fun monthSummary(start: Long, end: Long): MonthSummary {
