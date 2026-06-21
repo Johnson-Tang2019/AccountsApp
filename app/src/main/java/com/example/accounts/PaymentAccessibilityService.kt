@@ -25,8 +25,7 @@ class PaymentAccessibilityService : AccessibilityService() {
         "com.tencent.mm" to "微信"
     )
     private val successWords = listOf(
-        "支付成功", "付款成功", "已支付", "支付完成", "交易成功",
-        "转账成功", "红包已发送", "发送成功"
+        "支付成功", "付款成功", "支付完成", "交易成功", "转账成功", "红包已发送"
     )
     private val amountRegex = Regex("(?:[¥￥]\\s*|金额[：:]?\\s*)([0-9][0-9,]*(?:\\.[0-9]{1,2})?)")
     private val handler = Handler(Looper.getMainLooper())
@@ -94,14 +93,28 @@ class PaymentAccessibilityService : AccessibilityService() {
         val hasSuccessText = successWords.any(page::contains)
         val prePaymentWords = listOf("确认付款", "立即付款", "输入支付密码", "使用密码", "确认支付")
         val isPrePaymentPage = prePaymentWords.any(page::contains)
+        val isWechatBrowsePage = actualPackage == "com.tencent.mm" && listOf(
+            "通讯录", "发现", "朋友圈", "我的账单", "支付服务", "摇优惠"
+        ).any(page::contains)
         val isWechatConfirmedPayment = actualPackage == "com.tencent.mm" &&
             page.contains("微信支付") &&
             (page.contains("微信红包") || page.contains("转账") || page.contains("收付款"))
+        val isWechatSuccessPage = actualPackage == "com.tencent.mm" && hasSuccessText &&
+            (page.contains("微信支付") || page.contains("微信红包") || page.contains("转账") || page.contains("收付款"))
+        if (isWechatBrowsePage) {
+            RecognitionLogger.log(this, "wechat_browse_page", "排除：当前是微信聊天列表或支付账单历史，不是新的支付结果页")
+            return
+        }
         if (isPrePaymentPage && !isWechatConfirmedPayment) {
             RecognitionLogger.log(this, "pre_payment_$actualPackage", "排除：检测到付款确认控件，尚未进入支付成功阶段")
             return
         }
-        if (!hasSuccessText && !isWechatConfirmedPayment) {
+        val accepted = if (actualPackage == "com.tencent.mm") {
+            isWechatConfirmedPayment || isWechatSuccessPage
+        } else {
+            hasSuccessText
+        }
+        if (!accepted) {
             val wechatPay = page.contains("微信支付")
             val redPacket = page.contains("微信红包")
             RecognitionLogger.log(
