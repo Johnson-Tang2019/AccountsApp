@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
 import android.view.Gravity
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
@@ -17,11 +18,25 @@ import java.util.concurrent.atomic.AtomicBoolean
 object UpdateUi {
     fun checkForUpdates(activity: AppCompatActivity, manual: Boolean) {
         val currentVersion = activity.packageManager.getPackageInfo(activity.packageName, 0).versionName.orEmpty()
-        val checking = if (manual) AlertDialog.Builder(activity)
-            .setTitle("检查更新")
-            .setMessage("正在连接 GitHub…")
-            .setCancelable(false)
-            .create().also(AlertDialog::show) else null
+        val checking = if (manual) {
+            val density = activity.resources.displayMetrics.density
+            val spinner = ProgressBar(activity).also(PinkDialogs::styleProgress)
+            val content = LinearLayout(activity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                val padding = (22 * density).toInt()
+                setPadding(padding, (8 * density).toInt(), padding, (8 * density).toInt())
+                addView(spinner, (34 * density).toInt(), (34 * density).toInt())
+                addView(TextView(activity).apply {
+                    text = "正在连接 GitHub…"
+                    textSize = 14f
+                    setTextColor(android.graphics.Color.rgb(61, 52, 55))
+                    setPadding((14 * density).toInt(), 0, 0, 0)
+                }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            }
+            AlertDialog.Builder(activity).setTitle("检查更新").setView(content).setCancelable(false).create()
+                .also(PinkDialogs::show)
+        } else null
 
         UpdateManager.check(currentVersion) { result ->
             activity.runOnUiThread {
@@ -39,14 +54,51 @@ object UpdateUi {
     }
 
     private fun showUpdateDialog(activity: AppCompatActivity, currentVersion: String, release: ReleaseInfo) {
-        val summary = release.notes.lineSequence().filter { it.isNotBlank() }.take(5).joinToString("\n").take(500)
-        AlertDialog.Builder(activity)
-            .setTitle("发现新版本 ${release.version}")
-            .setMessage("当前版本：$currentVersion\n\n${summary.ifBlank { "GitHub 已发布新版本。" }}")
+        val density = activity.resources.displayMetrics.density
+        val summary = release.notes.lineSequence().map { it.trim().trimStart('#', '-', '*', ' ') }
+            .filter { it.isNotBlank() }.take(5).joinToString("\n").take(500)
+        val content = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            val padding = (22 * density).toInt()
+            setPadding(padding, (4 * density).toInt(), padding, 0)
+            addView(LinearLayout(activity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                addView(ImageView(activity).apply {
+                    setImageResource(R.drawable.app_icon)
+                    scaleType = ImageView.ScaleType.CENTER_CROP
+                }, (58 * density).toInt(), (58 * density).toInt())
+                addView(LinearLayout(activity).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding((14 * density).toInt(), 0, 0, 0)
+                    addView(TextView(activity).apply {
+                        text = "发现新版本"
+                        textSize = 20f
+                        setTextColor(android.graphics.Color.rgb(61, 52, 55))
+                    })
+                    addView(TextView(activity).apply {
+                        text = "v$currentVersion  →  v${release.version}"
+                        textSize = 13f
+                        setTextColor(android.graphics.Color.rgb(201, 79, 104))
+                    })
+                }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            })
+            addView(TextView(activity).apply {
+                text = summary.ifBlank { "GitHub 已发布新版本。"
+                }
+                textSize = 13f
+                setTextColor(android.graphics.Color.rgb(97, 80, 86))
+                setLineSpacing(0f, 1.2f)
+                setPadding(0, (18 * density).toInt(), 0, 0)
+            })
+        }
+        val dialog = AlertDialog.Builder(activity)
+            .setView(content)
             .setNegativeButton("稍后", null)
             .setNeutralButton("查看发布页") { _, _ -> activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(release.pageUrl))) }
             .setPositiveButton("下载更新") { _, _ -> download(activity, release) }
-            .show()
+            .create()
+        PinkDialogs.show(dialog)
     }
 
     private fun download(activity: AppCompatActivity, release: ReleaseInfo) {
@@ -54,6 +106,7 @@ object UpdateUi {
         val padding = (22 * density).toInt()
         val percent = TextView(activity).apply { text = "0%"; gravity = Gravity.CENTER; textSize = 13f }
         val progressBar = ProgressBar(activity, null, android.R.attr.progressBarStyleHorizontal).apply { max = 100 }
+        PinkDialogs.styleProgress(progressBar)
         val content = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(padding, padding / 2, padding, 0)
@@ -67,7 +120,7 @@ object UpdateUi {
             .setNegativeButton("取消") { _, _ -> cancelled.set(true) }
             .setCancelable(false)
             .create()
-        dialog.show()
+        PinkDialogs.show(dialog)
 
         UpdateManager.download(activity, release, cancelled::get, { value ->
             activity.runOnUiThread { progressBar.progress = value; percent.text = "$value%" }

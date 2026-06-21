@@ -3,7 +3,6 @@ package com.example.accounts
 import android.app.AlertDialog
 import android.content.Intent
 import android.graphics.Color
-import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.os.Build
 import android.Manifest
@@ -117,8 +116,9 @@ class MainActivity : AppCompatActivity() {
             showRecordDialog(rows[position])
         }
         findViewById<ListView>(R.id.records).setOnItemLongClickListener { _, _, position, _ ->
-            AlertDialog.Builder(this).setTitle("删除这笔记录？").setMessage("删除后无法恢复。")
-                .setNegativeButton("取消", null).setPositiveButton("删除") { _, _ -> db.delete(rows[position].id); refresh() }.show()
+            val deleteDialog = AlertDialog.Builder(this).setTitle("删除这笔记录？").setMessage("删除后无法恢复。")
+                .setNegativeButton("取消", null).setPositiveButton("删除") { _, _ -> db.delete(rows[position].id); refresh() }.create()
+            PinkDialogs.show(deleteDialog)
             true
         }
     }
@@ -217,13 +217,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun roundDialog(dialog: AlertDialog) {
-        val radius = 26f * resources.displayMetrics.density
-        dialog.window?.setBackgroundDrawable(GradientDrawable().apply {
-            shape = GradientDrawable.RECTANGLE
-            cornerRadius = radius
-            setColor(Color.parseColor("#FFF9FA"))
-            setStroke((1 * resources.displayMetrics.density).toInt(), Color.parseColor("#F7DCE4"))
-        })
+        PinkDialogs.apply(dialog)
     }
 
     private inner class RecordAdapter(private val data: List<PaymentRecord>) : BaseAdapter() {
