@@ -1,0 +1,74 @@
+name: Sync Release APK to Gitee
+
+on:
+  release:
+    types: [published]
+
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "GitHub Release tag, example: v1.0.0"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  sync-to-gitee:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download GitHub Release APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          echo "Release tag: $TAG_NAME"
+
+          mkdir -p github-release
+
+          gh release download "$TAG_NAME" \
+            --repo "${{ github.repository }}" \
+            --pattern "*.apk" \
+            --dir github-release
+
+          echo "Downloaded files:"
+          ls -lh github-release
+
+          APK_FILE=$(ls github-release/*.apk | head -n 1)
+
+          if [ -z "$APK_FILE" ]; then
+            echo "No APK file found in GitHub Release."
+            exit 1
+          fi
+
+          echo "APK_FILE=$APK_FILE" >> $GITHUB_ENV
+          echo "TAG_NAME=$TAG_NAME" >> $GITHUB_ENV
+
+      - name: Push APK to Gitee Repository
+        env:
+          GITEE_USERNAME: ${{ secrets.GITEE_USERNAME }}
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          GITEE_OWNER: ${{ secrets.GITEE_OWNER }}
+          GITEE_REPO: ${{ secrets.GITEE_REPO }}
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "github-actions@github.com"
+
+          git clone "https://${GITEE_USERNAME}:${GITEE_TOKEN}@gitee.com/${GITEE_OWNER}/${GITEE_REPO}.git" gitee-repo
+
+          cd gitee-repo
+
+          mkdir -p "releases/${TAG_NAME}"
+          mkdir -p "releases/latest"
+
+          cp "../${APK_FILE}" "releases/${TAG_NAME}/app-release.apk"
+          cp "../${APK_FILE}" "releases/latest/app-release.apk"
+
+          echo "Latest version: ${TAG_NAME}" > releases/latest/README.md
+
+          git add releases
+
+          git commit -m "sync release ${TAG_NAME} from GitHub" || echo "No changes to commit"
+
+          git push
