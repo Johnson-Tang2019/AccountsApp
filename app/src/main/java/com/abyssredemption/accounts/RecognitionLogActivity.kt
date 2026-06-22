@@ -1,4 +1,4 @@
-package com.example.accounts
+package com.abyssredemption.accounts
 
 import android.os.Bundle
 import android.content.Intent

@@ -6,4 +6,4 @@
     android:notificationTimeout="500"
     android:canRetrieveWindowContent="true"
     android:description="@string/accessibility_description"
-    android:settingsActivity="com.example.accounts.MainActivity" />
+    android:settingsActivity="com.abyssredemption.accounts.MainActivity" />

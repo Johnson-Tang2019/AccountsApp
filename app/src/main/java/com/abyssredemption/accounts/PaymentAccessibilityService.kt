@@ -1,4 +1,4 @@
-package com.example.accounts
+package com.abyssredemption.accounts
 
 import android.accessibilityservice.AccessibilityService
 import android.animation.AnimatorSet
@@ -32,8 +32,8 @@ import kotlin.math.abs
 
 class PaymentAccessibilityService : AccessibilityService() {
     companion object {
-        const val ACTION_SETTINGS_CHANGED = "com.example.accounts.SETTINGS_CHANGED"
-        const val ACTION_PAYMENT_CONFIRMED = "com.example.accounts.PAYMENT_CONFIRMED"
+        const val ACTION_SETTINGS_CHANGED = "com.abyssredemption.accounts.SETTINGS_CHANGED"
+        const val ACTION_PAYMENT_CONFIRMED = "com.abyssredemption.accounts.PAYMENT_CONFIRMED"
     }
     private val allowedPackages = mapOf(
         "com.eg.android.AlipayGphone" to "支付宝",

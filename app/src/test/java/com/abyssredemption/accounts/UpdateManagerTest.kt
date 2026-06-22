@@ -1,4 +1,4 @@
-package com.example.accounts
+package com.abyssredemption.accounts
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue

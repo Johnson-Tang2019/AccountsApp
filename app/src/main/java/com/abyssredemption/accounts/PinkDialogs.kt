@@ -1,4 +1,4 @@
-package com.example.accounts
+package com.abyssredemption.accounts
 
 import android.app.AlertDialog
 import android.content.res.ColorStateList

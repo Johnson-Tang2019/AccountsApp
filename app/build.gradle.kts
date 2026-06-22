@@ -12,15 +12,15 @@ plugins {
 }
 
 android {
-    namespace = "com.example.accounts"
+    namespace = "com.abyssredemption.accounts"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.example.accounts"
+        applicationId = "com.abyssredemption.accounts"
         minSdk = 26
         targetSdk = 35
-        versionCode = 30
-        versionName = "1.0.29"
+        versionCode = 31
+        versionName = "1.0.30"
     }
 
     compileOptions {

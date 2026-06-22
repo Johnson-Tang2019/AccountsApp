@@ -1,4 +1,4 @@
-package com.example.accounts
+package com.abyssredemption.accounts
 
 import org.w3c.dom.Element
 import java.io.ByteArrayInputStream

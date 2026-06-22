@@ -1,4 +1,4 @@
-package com.example.accounts
+package com.abyssredemption.accounts
 
 import android.content.Context
 import java.text.SimpleDateFormat
