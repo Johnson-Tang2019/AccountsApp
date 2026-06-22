@@ -126,6 +126,23 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="10dp"
+                app:cardBackgroundColor="@color/glass_white" app:cardCornerRadius="22dp" app:cardElevation="0dp"
+                app:strokeColor="@color/glass_stroke" app:strokeWidth="1dp">
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="18dp">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="应用配置" android:textColor="@color/text_primary" android:textSize="15sp" android:textStyle="bold" />
+                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp"
+                        android:text="备份预算、实时余额、预留比例，以及悬浮图标、动画和通知开关。"
+                        android:textColor="@color/text_secondary" android:textSize="11sp" />
+                    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="14dp" android:orientation="horizontal">
+                        <com.google.android.material.button.MaterialButton android:id="@+id/exportConfig" android:layout_width="0dp" android:layout_height="48dp" android:layout_weight="1" android:text="导出配置" android:textColor="@color/pink_dark" app:backgroundTint="@color/pink_soft" app:cornerRadius="16dp" />
+                        <Space android:layout_width="10dp" android:layout_height="1dp" />
+                        <com.google.android.material.button.MaterialButton android:id="@+id/importConfig" android:layout_width="0dp" android:layout_height="48dp" android:layout_weight="1" android:text="导入配置" android:textColor="@color/white" app:backgroundTint="@color/pink_primary" app:cornerRadius="16dp" />
+                    </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
             <com.google.android.material.button.MaterialButton android:id="@+id/saveSettings"
                 android:layout_width="match_parent" android:layout_height="54dp" android:layout_marginTop="26dp"
                 android:text="保存设置" android:textColor="@color/white" android:textSize="16sp"

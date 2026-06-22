@@ -16,6 +16,41 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private val prefs by lazy { getSharedPreferences("budget_settings", MODE_PRIVATE) }
+    private val configExportLauncher = registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if (uri == null) return@registerForActivityResult
+        runCatching {
+            val saved = prefs.getFloat("current_balance", 0f).toDouble()
+            val asOf = prefs.getLong("balance_as_of", System.currentTimeMillis())
+            val live = AccountDb(this).use { saved + it.netChangeSince(asOf) }.toFloat()
+            val config = AppConfig(
+                prefs.getFloat("monthly_budget", 5000f), live, prefs.getInt("remaining_ratio", 20),
+                prefs.getBoolean("overlay_visible_enabled", true),
+                prefs.getBoolean("overlay_animation_enabled", true),
+                prefs.getBoolean("record_notification_enabled", true)
+            )
+            contentResolver.openOutputStream(uri)?.use { ConfigManager.export(it, config) } ?: error("无法创建配置文件")
+        }.onSuccess { Toast.makeText(this, "配置已导出", Toast.LENGTH_SHORT).show() }
+            .onFailure { Toast.makeText(this, "导出配置失败：${it.message}", Toast.LENGTH_LONG).show() }
+    }
+    private val configImportLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@registerForActivityResult
+        runCatching {
+            val config = contentResolver.openInputStream(uri)?.use(ConfigManager::import) ?: error("无法读取配置文件")
+            prefs.edit()
+                .putFloat("monthly_budget", config.monthlyBudget)
+                .putFloat("current_balance", config.currentBalance)
+                .putLong("balance_as_of", System.currentTimeMillis())
+                .putInt("remaining_ratio", config.remainingRatio)
+                .putBoolean("overlay_visible_enabled", config.overlayVisible)
+                .putBoolean("overlay_animation_enabled", config.overlayAnimation)
+                .putBoolean("record_notification_enabled", config.recordNotification)
+                .apply()
+            sendBroadcast(Intent(PaymentAccessibilityService.ACTION_SETTINGS_CHANGED).setPackage(packageName))
+        }.onSuccess {
+            Toast.makeText(this, "配置已导入并应用", Toast.LENGTH_SHORT).show()
+            recreate()
+        }.onFailure { Toast.makeText(this, "导入配置失败：${it.message}", Toast.LENGTH_LONG).show() }
+    }
     private val exportLauncher = registerForActivityResult(ActivityResultContracts.CreateDocument(XLSX_MIME)) { uri ->
         if (uri == null) return@registerForActivityResult
         Thread {
@@ -98,6 +133,13 @@ class SettingsActivity : AppCompatActivity() {
         }
         findViewById<android.view.View>(R.id.importXlsx).setOnClickListener {
             importLauncher.launch(arrayOf(XLSX_MIME, "application/zip"))
+        }
+        findViewById<android.view.View>(R.id.exportConfig).setOnClickListener {
+            val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmm", java.util.Locale.CHINA).format(java.util.Date())
+            configExportLauncher.launch("AccountsConfig-$stamp.json")
+        }
+        findViewById<android.view.View>(R.id.importConfig).setOnClickListener {
+            configImportLauncher.launch(arrayOf("application/json", "text/plain"))
         }
         findViewById<android.view.View>(R.id.manualUpdate).setOnClickListener {
             UpdateUi.checkForUpdates(this, manual = true)
