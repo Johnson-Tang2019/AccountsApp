@@ -103,12 +103,23 @@ object XlsxManager {
         return result
     }
 
-    private fun document(bytes: ByteArray) = DocumentBuilderFactory.newInstance().apply {
-        isNamespaceAware = false
-        setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
-        setFeature("http://xml.org/sax/features/external-general-entities", false)
-        setFeature("http://xml.org/sax/features/external-parameter-entities", false)
-    }.newDocumentBuilder().parse(ByteArrayInputStream(bytes))
+    private fun document(bytes: ByteArray): org.w3c.dom.Document {
+        // 部分安卓 ROM 的 XML 实现不认识 Xerces 特性名，因此先直接拒绝危险声明，
+        // 再以“支持则启用”的方式加固解析器，避免兼容性异常削弱 XXE 防护。
+        val declarationProbe = bytes.toString(Charsets.ISO_8859_1).uppercase(Locale.ROOT)
+        require("<!DOCTYPE" !in declarationProbe && "<!ENTITY" !in declarationProbe) { "XLSX 包含不安全的 XML 声明" }
+        val factory = DocumentBuilderFactory.newInstance().apply {
+            isNamespaceAware = false
+            isExpandEntityReferences = false
+            runCatching { isXIncludeAware = false }
+            runCatching { setFeature("http://apache.org/xml/features/disallow-doctype-decl", true) }
+            runCatching { setFeature("http://xml.org/sax/features/external-general-entities", false) }
+            runCatching { setFeature("http://xml.org/sax/features/external-parameter-entities", false) }
+            runCatching { setAttribute("http://javax.xml.XMLConstants/property/accessExternalDTD", "") }
+            runCatching { setAttribute("http://javax.xml.XMLConstants/property/accessExternalSchema", "") }
+        }
+        return factory.newDocumentBuilder().parse(ByteArrayInputStream(bytes))
+    }
 
     private fun columnIndex(reference: String): Int {
         val letters = reference.takeWhile(Char::isLetter)
