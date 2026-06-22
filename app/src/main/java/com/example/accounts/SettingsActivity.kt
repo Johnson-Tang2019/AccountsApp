@@ -66,10 +66,14 @@ class SettingsActivity : AppCompatActivity() {
         val ratio = findViewById<SeekBar>(R.id.remainingRatio)
         val ratioText = findViewById<TextView>(R.id.remainingRatioText)
         val animationSwitch = findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.overlayAnimationSwitch)
+        val overlaySwitch = findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.overlayVisibleSwitch)
+        val notificationSwitch = findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.recordNotificationSwitch)
         budget.setText(prefs.getFloat("monthly_budget", 5000f).toString())
         balance.setText(prefs.getFloat("current_balance", 0f).toString())
         ratio.progress = prefs.getInt("remaining_ratio", 20)
         animationSwitch.isChecked = prefs.getBoolean("overlay_animation_enabled", true)
+        overlaySwitch.isChecked = prefs.getBoolean("overlay_visible_enabled", true)
+        notificationSwitch.isChecked = prefs.getBoolean("record_notification_enabled", true)
 
         fun updateRatioLabel(value: Int) {
             ratioText.text = "期望保留 $value% · 月底浅粉进度 ${(100 - value)}%"
@@ -105,10 +109,13 @@ class SettingsActivity : AppCompatActivity() {
                 .putFloat("monthly_budget", budgetValue)
                 .putInt("remaining_ratio", ratio.progress)
                 .putBoolean("overlay_animation_enabled", animationSwitch.isChecked)
+                .putBoolean("overlay_visible_enabled", overlaySwitch.isChecked)
+                .putBoolean("record_notification_enabled", notificationSwitch.isChecked)
             if (balanceValue != oldBalance) {
                 editor.putFloat("current_balance", balanceValue).putLong("balance_as_of", System.currentTimeMillis())
             }
             editor.apply()
+            sendBroadcast(Intent(PaymentAccessibilityService.ACTION_SETTINGS_CHANGED).setPackage(packageName))
             Toast.makeText(this, "设置已保存", Toast.LENGTH_SHORT).show()
             finish()
         }

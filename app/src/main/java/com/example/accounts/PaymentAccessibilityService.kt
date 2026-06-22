@@ -26,10 +26,15 @@ import android.view.View
 import android.widget.ImageView
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import androidx.core.content.ContextCompat
 import java.security.MessageDigest
 import kotlin.math.abs
 
 class PaymentAccessibilityService : AccessibilityService() {
+    companion object {
+        const val ACTION_SETTINGS_CHANGED = "com.example.accounts.SETTINGS_CHANGED"
+        const val ACTION_PAYMENT_CONFIRMED = "com.example.accounts.PAYMENT_CONFIRMED"
+    }
     private val allowedPackages = mapOf(
         "com.eg.android.AlipayGphone" to "支付宝",
         "com.tencent.mm" to "微信"
@@ -42,12 +47,22 @@ class PaymentAccessibilityService : AccessibilityService() {
     private var pendingPackage: String? = null
     private val parseTask = Runnable { pendingPackage?.let(::parseCurrentWindow) }
     private var overlayView: ImageView? = null
+    private var confirmationPendingUntil = 0L
     private var screenReceiverRegistered = false
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
                 Intent.ACTION_SCREEN_OFF -> setOverlayVisible(false)
                 Intent.ACTION_SCREEN_ON, Intent.ACTION_USER_PRESENT -> updateOverlayForScreenState()
+                ACTION_SETTINGS_CHANGED -> updateOverlayForScreenState()
+                ACTION_PAYMENT_CONFIRMED -> {
+                    animateOverlaySuccess()
+                    sendRecordedNotification(
+                        intent.getStringExtra("source") ?: "自动记账",
+                        intent.getStringExtra("merchant") ?: "支付商户",
+                        intent.getStringExtra("amount") ?: "0.00"
+                    )
+                }
             }
         }
     }
@@ -157,6 +172,21 @@ class PaymentAccessibilityService : AccessibilityService() {
             RecognitionLogger.log(this, "recent_duplicate_${sourceName}_$amount", "排除：30 秒内已有相同来源和金额的记录", 0)
             return
         }
+        val previous = database.recent().firstOrNull()
+        if (previous != null && kotlin.math.abs(previous.amount - amount.toDouble()) < 0.001 && now >= confirmationPendingUntil) {
+            confirmationPendingUntil = now + 15_000
+            val confirmationFingerprint = sha256("confirm|$actualPackage|$merchant|$amount|$now")
+            startActivity(Intent(this, DuplicatePaymentActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS)
+                putExtra("merchant", merchant)
+                putExtra("amount", amount)
+                putExtra("source", sourceName)
+                putExtra("paidAt", now)
+                putExtra("fingerprint", confirmationFingerprint)
+            })
+            RecognitionLogger.log(this, "same_amount_confirmation", "提示：本次金额与上一笔相同，等待用户确认是否记录", 0)
+            return
+        }
         val fingerprint = sha256("$actualPackage|$merchant|$amount|${now / 60_000}")
         val inserted = database.insert(merchant, amount, sourceName, now, fingerprint)
         if (inserted) {
@@ -222,6 +252,7 @@ class PaymentAccessibilityService : AccessibilityService() {
         .digest(value.toByteArray()).joinToString("") { "%02x".format(it) }
 
     private fun sendRecordedNotification(source: String, merchant: String, amount: String) {
+        if (!getSharedPreferences("budget_settings", MODE_PRIVATE).getBoolean("record_notification_enabled", true)) return
         val manager = getSystemService(NotificationManager::class.java)
         val channelId = "auto_record_success"
         manager.createNotificationChannel(NotificationChannel(
@@ -345,16 +376,18 @@ class PaymentAccessibilityService : AccessibilityService() {
             addAction(Intent.ACTION_SCREEN_OFF)
             addAction(Intent.ACTION_SCREEN_ON)
             addAction(Intent.ACTION_USER_PRESENT)
+            addAction(ACTION_SETTINGS_CHANGED)
+            addAction(ACTION_PAYMENT_CONFIRMED)
         }
-        if (Build.VERSION.SDK_INT >= 33) registerReceiver(screenReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
-        else @Suppress("DEPRECATION") registerReceiver(screenReceiver, filter)
+        ContextCompat.registerReceiver(this, screenReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
         screenReceiverRegistered = true
     }
 
     private fun updateOverlayForScreenState() {
         val interactive = getSystemService(PowerManager::class.java).isInteractive
         val locked = getSystemService(KeyguardManager::class.java).isKeyguardLocked
-        setOverlayVisible(interactive && !locked)
+        val enabled = getSharedPreferences("budget_settings", MODE_PRIVATE).getBoolean("overlay_visible_enabled", true)
+        setOverlayVisible(enabled && interactive && !locked)
     }
 
     private fun setOverlayVisible(visible: Boolean) {

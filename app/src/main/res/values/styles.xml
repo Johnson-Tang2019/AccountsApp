@@ -8,6 +8,14 @@
         <item name="android:statusBarColor">@color/pink_soft</item>
         <item name="android:windowLightStatusBar">true</item>
     </style>
+    <style name="Theme.Accounts.Dialog" parent="Theme.MaterialComponents.Light.Dialog.Alert">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:backgroundDimEnabled">true</item>
+        <item name="android:windowMinWidthMajor">90%</item>
+        <item name="android:windowMinWidthMinor">90%</item>
+    </style>
     <style name="FilterChip">
         <item name="android:layout_width">wrap_content</item><item name="android:layout_height">32dp</item>
         <item name="android:layout_marginStart">5dp</item><item name="android:gravity">center</item>

@@ -18,6 +18,7 @@
         </activity>
         <activity android:name=".SettingsActivity" android:exported="false" />
         <activity android:name=".RecognitionLogActivity" android:exported="false" />
+        <activity android:name=".DuplicatePaymentActivity" android:exported="false" android:theme="@style/Theme.Accounts.Dialog" />
         <service
             android:name=".PaymentAccessibilityService"
             android:exported="false"
