@@ -69,7 +69,10 @@ class SettingsActivity : AppCompatActivity() {
         val overlaySwitch = findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.overlayVisibleSwitch)
         val notificationSwitch = findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.recordNotificationSwitch)
         budget.setText(prefs.getFloat("monthly_budget", 5000f).toString())
-        balance.setText(prefs.getFloat("current_balance", 0f).toString())
+        val savedBalance = prefs.getFloat("current_balance", 0f).toDouble()
+        val balanceAsOf = prefs.getLong("balance_as_of", System.currentTimeMillis())
+        val liveBalance = AccountDb(this).use { savedBalance + it.netChangeSince(balanceAsOf) }
+        balance.setText(java.text.DecimalFormat("0.00").format(liveBalance))
         ratio.progress = prefs.getInt("remaining_ratio", 20)
         animationSwitch.isChecked = prefs.getBoolean("overlay_animation_enabled", true)
         overlaySwitch.isChecked = prefs.getBoolean("overlay_visible_enabled", true)
@@ -104,16 +107,14 @@ class SettingsActivity : AppCompatActivity() {
             val balanceValue = balance.text.toString().toFloatOrNull()
             if (budgetValue == null || budgetValue <= 0f) { budget.error = "请输入大于 0 的预算"; return@setOnClickListener }
             if (balanceValue == null) { balance.error = "请输入正确余额"; return@setOnClickListener }
-            val oldBalance = prefs.getFloat("current_balance", 0f)
             val editor = prefs.edit()
                 .putFloat("monthly_budget", budgetValue)
                 .putInt("remaining_ratio", ratio.progress)
                 .putBoolean("overlay_animation_enabled", animationSwitch.isChecked)
                 .putBoolean("overlay_visible_enabled", overlaySwitch.isChecked)
                 .putBoolean("record_notification_enabled", notificationSwitch.isChecked)
-            if (balanceValue != oldBalance) {
-                editor.putFloat("current_balance", balanceValue).putLong("balance_as_of", System.currentTimeMillis())
-            }
+                .putFloat("current_balance", balanceValue)
+                .putLong("balance_as_of", System.currentTimeMillis())
             editor.apply()
             sendBroadcast(Intent(PaymentAccessibilityService.ACTION_SETTINGS_CHANGED).setPackage(packageName))
             Toast.makeText(this, "设置已保存", Toast.LENGTH_SHORT).show()

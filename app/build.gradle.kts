@@ -19,8 +19,8 @@ android {
         applicationId = "com.example.accounts"
         minSdk = 26
         targetSdk = 35
-        versionCode = 28
-        versionName = "1.0.27"
+        versionCode = 29
+        versionName = "1.0.28"
     }
 
     compileOptions {
