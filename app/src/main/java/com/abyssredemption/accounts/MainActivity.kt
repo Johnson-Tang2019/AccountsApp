@@ -98,16 +98,16 @@ class MainActivity : AppCompatActivity() {
             progress = expectedProgress
         }
 
-        val enabled = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
-            ?.contains("$packageName/${PaymentAccessibilityService::class.java.name}", true) == true
+        val enabled = AccessibilityStatus.isServiceEnabled(this)
         val statePrefs = getSharedPreferences("service_state", MODE_PRIVATE)
         val heartbeatFresh = System.currentTimeMillis() - statePrefs.getLong("last_heartbeat", 0) < 15_000
         findViewById<TextView>(R.id.autoStatus).text = when {
             enabled && heartbeatFresh -> "自动记账运行中"
+            heartbeatFresh -> "自动记账运行中"
             enabled -> "已授权但服务未运行，点击检测"
             else -> "未开启，点击授权"
         }
-        findViewById<TextView>(R.id.autoDot).setTextColor(Color.parseColor(if (enabled && heartbeatFresh) "#4FAE82" else "#C9A6AE"))
+        findViewById<TextView>(R.id.autoDot).setTextColor(Color.parseColor(if (heartbeatFresh) "#4FAE82" else "#C9A6AE"))
 
         val rows = db.recent(filter)
         findViewById<TextView>(R.id.emptyView).visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
@@ -137,8 +137,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showAccessibilityCheck() {
-        val enabled = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
-            ?.contains("$packageName/${PaymentAccessibilityService::class.java.name}", true) == true
+        val enabled = AccessibilityStatus.isServiceEnabled(this)
         val state = getSharedPreferences("service_state", MODE_PRIVATE)
         val heartbeat = state.getLong("last_heartbeat", 0)
         val running = System.currentTimeMillis() - heartbeat < 15_000
@@ -152,6 +151,7 @@ class MainActivity : AppCompatActivity() {
             append("最后事件：")
             if (lastEvent > 0) append("$lastSource · ${timeFormat.format(Date(lastEvent))}") else append("尚未收到微信/支付宝事件")
             if (enabled && !running) append("\n\n系统显示已授权，但服务没有运行。请关闭该无障碍服务后重新开启，并允许应用后台运行。")
+            if (!enabled && running) append("\n\n服务心跳正常，说明无障碍服务实际已经在运行；如果仍无法记账，请在支付后打开“识别诊断日志”查看被排除原因。")
         }
         RecognitionLogger.log(this, "manual_check", "手动检测：授权=$enabled，心跳=$running，最后事件=$lastSource", 0)
         val dialog = AlertDialog.Builder(this)

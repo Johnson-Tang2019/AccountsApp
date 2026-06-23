@@ -37,10 +37,13 @@ class RecognitionLogActivity : AppCompatActivity() {
     override fun onResume() { super.onResume(); refresh() }
 
     private fun refresh() {
-        val enabled = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
-            ?.contains("$packageName/${PaymentAccessibilityService::class.java.name}", true) == true
+        val enabled = AccessibilityStatus.isServiceEnabled(this)
+        val heartbeat = getSharedPreferences("service_state", MODE_PRIVATE).getLong("last_heartbeat", 0)
+        val running = System.currentTimeMillis() - heartbeat < 15_000
         findViewById<TextView>(R.id.logServiceStatus).text = if (enabled) {
             "系统授权：已开启 · 屏幕右侧应显示粉色“记”悬浮按钮"
+        } else if (running) {
+            "系统授权：检测不到 · 但服务心跳正常，支付后请查看下方排除原因"
         } else {
             "系统授权：未开启 · 点击这里前往无障碍设置"
         }
