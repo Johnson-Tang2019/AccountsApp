@@ -48,6 +48,9 @@ class PaymentAccessibilityService : AccessibilityService() {
     private val parseTask = Runnable { pendingPackage?.let(::parseCurrentWindow) }
     private var overlayView: ImageView? = null
     private var confirmationPendingUntil = 0L
+    private var pendingWechatAmount: String? = null
+    private var pendingWechatMerchant: String? = null
+    private var pendingWechatUntil = 0L
     private var screenReceiverRegistered = false
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -103,6 +106,8 @@ class PaymentAccessibilityService : AccessibilityService() {
         // 微信支付处理中页面停留很短，立即和短延时各采样一次；最终再等待窗口稳定。
         parseCurrentWindow(pkg)
         handler.postDelayed({ parseCurrentWindow(pkg) }, 120)
+        handler.postDelayed({ parseCurrentWindow(pkg) }, 1500)
+        handler.postDelayed({ parseCurrentWindow(pkg) }, 2500)
         pendingPackage = pkg
         handler.removeCallbacks(parseTask)
         handler.postDelayed(parseTask, 650)
@@ -137,16 +142,31 @@ class PaymentAccessibilityService : AccessibilityService() {
             (page.contains("微信红包") || page.contains("转账") || page.contains("收付款"))
         val isWechatSuccessPage = actualPackage == "com.tencent.mm" && hasSuccessText &&
             (page.contains("微信支付") || page.contains("微信红包") || page.contains("转账") || page.contains("收付款"))
+        val now = System.currentTimeMillis()
+        val hasRecentWechatPaymentCandidate = actualPackage == "com.tencent.mm" &&
+            pendingWechatAmount != null &&
+            now <= pendingWechatUntil
+        val isWechatFastResultPage = hasRecentWechatPaymentCandidate &&
+            page.contains("微信支付") &&
+            !isPrePaymentPage
         if (isWechatBrowsePage) {
             RecognitionLogger.log(this, "wechat_browse_page", "排除：当前是微信聊天列表或支付账单历史，不是新的支付结果页")
             return
         }
         if (isPrePaymentPage && !isWechatConfirmedPayment) {
+            if (actualPackage == "com.tencent.mm") {
+                findAmount(texts, page)?.let { amount ->
+                    pendingWechatAmount = amount
+                    pendingWechatMerchant = findMerchant(texts)
+                    pendingWechatUntil = now + 12_000
+                    RecognitionLogger.log(this, "wechat_pending_amount", "暂存：检测到微信付款确认金额 ¥$amount，等待支付结果页", 0)
+                }
+            }
             RecognitionLogger.log(this, "pre_payment_$actualPackage", "排除：检测到付款确认控件，尚未进入支付成功阶段")
             return
         }
         val accepted = if (actualPackage == "com.tencent.mm") {
-            isWechatConfirmedPayment || isWechatSuccessPage
+            isWechatConfirmedPayment || isWechatSuccessPage || isWechatFastResultPage
         } else {
             hasSuccessText
         }
@@ -161,12 +181,15 @@ class PaymentAccessibilityService : AccessibilityService() {
             return
         }
 
-        val amount = findAmount(texts, page) ?: run {
+        val amount = findAmount(texts, page) ?: pendingWechatAmount?.takeIf {
+            actualPackage == "com.tencent.mm" && isWechatFastResultPage
+        } ?: run {
             RecognitionLogger.log(this, "no_amount_$actualPackage", "排除：已找到支付状态，但未读取到金额（节点 ${texts.size}）")
             return
         }
-        val merchant = findMerchant(texts) ?: "${sourceName}商户"
-        val now = System.currentTimeMillis()
+        val merchant = findMerchant(texts)
+            ?: pendingWechatMerchant?.takeIf { actualPackage == "com.tencent.mm" && isWechatFastResultPage }
+            ?: "${sourceName}商户"
         val database = AccountDb(applicationContext)
         if (database.hasRecentPayment(amount.toDouble(), sourceName, now - 30_000)) {
             RecognitionLogger.log(this, "recent_duplicate_${sourceName}_$amount", "排除：30 秒内已有相同来源和金额的记录", 0)
@@ -191,11 +214,19 @@ class PaymentAccessibilityService : AccessibilityService() {
         val inserted = database.insert(merchant, amount, sourceName, now, fingerprint)
         if (inserted) {
             RecognitionLogger.log(this, "inserted_$fingerprint", "成功：已记录 $sourceName · $merchant · ¥$amount", 0)
+            clearPendingWechatPayment()
             animateOverlaySuccess()
             sendRecordedNotification(sourceName, merchant, amount)
         } else {
             RecognitionLogger.log(this, "duplicate_$fingerprint", "排除：该支付记录已存在，未重复记账", 0)
+            clearPendingWechatPayment()
         }
+    }
+
+    private fun clearPendingWechatPayment() {
+        pendingWechatAmount = null
+        pendingWechatMerchant = null
+        pendingWechatUntil = 0L
     }
 
     private fun findAmount(texts: List<String>, page: String): String? {
