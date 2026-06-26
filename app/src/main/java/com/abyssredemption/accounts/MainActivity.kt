@@ -37,6 +37,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.checkAccessibility).setOnClickListener { showAccessibilityCheck() }
         findViewById<View>(R.id.addRecord).setOnClickListener { showRecordDialog(null) }
         findViewById<View>(R.id.openSettings).setOnClickListener { startActivity(Intent(this, SettingsActivity::class.java)) }
+        findViewById<View>(R.id.openStats).setOnClickListener { startActivity(Intent(this, StatisticsActivity::class.java)) }
         findViewById<View>(R.id.filterAll).setOnClickListener { filter = null; refresh() }
         findViewById<View>(R.id.filterExpense).setOnClickListener { filter = "expense"; refresh() }
         findViewById<View>(R.id.filterIncome).setOnClickListener { filter = "income"; refresh() }

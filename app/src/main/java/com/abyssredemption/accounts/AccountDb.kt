@@ -20,6 +20,7 @@ data class PaymentRecord(
 
 data class MonthSummary(val income: Double, val expense: Double)
 data class BudgetStats(val monthRemaining: Double, val accumulatedRemaining: Double)
+data class DailyAmount(val dayKey: String, val income: Double, val expense: Double)
 
 class AccountDb(context: Context) : SQLiteOpenHelper(context, "accounts.db", null, 2) {
     override fun onCreate(db: SQLiteDatabase) {
@@ -116,6 +117,28 @@ class AccountDb(context: Context) : SQLiteOpenHelper(context, "accounts.db", nul
             while (c.moveToNext()) if (c.getString(0) == "income") income = c.getDouble(1) else expense = c.getDouble(1)
         }
         return MonthSummary(income, expense)
+    }
+
+    fun dailyAmounts(start: Long, end: Long): List<DailyAmount> {
+        val byDay = linkedMapOf<String, DoubleArray>()
+        readableDatabase.rawQuery(
+            """
+            SELECT strftime('%Y-%m-%d', paid_at / 1000, 'unixepoch', 'localtime') AS day_key,
+                   kind,
+                   COALESCE(SUM(amount),0)
+            FROM payments
+            WHERE paid_at>=? AND paid_at<?
+            GROUP BY day_key, kind
+            ORDER BY day_key ASC
+            """.trimIndent(),
+            arrayOf(start.toString(), end.toString())
+        ).use { c ->
+            while (c.moveToNext()) {
+                val values = byDay.getOrPut(c.getString(0)) { doubleArrayOf(0.0, 0.0) }
+                if (c.getString(1) == "income") values[0] = c.getDouble(2) else values[1] = c.getDouble(2)
+            }
+        }
+        return byDay.map { (day, values) -> DailyAmount(day, values[0], values[1]) }
     }
 
     fun budgetStats(monthlyBudget: Double, currentBalance: Double, currentMonthStart: Long): BudgetStats {

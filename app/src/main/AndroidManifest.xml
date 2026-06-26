@@ -17,6 +17,7 @@
             </intent-filter>
         </activity>
         <activity android:name=".SettingsActivity" android:exported="false" />
+        <activity android:name=".StatisticsActivity" android:exported="false" />
         <activity android:name=".RecognitionLogActivity" android:exported="false" />
         <activity android:name=".DuplicatePaymentActivity" android:exported="false" android:theme="@style/Theme.Accounts.Dialog" />
         <service
