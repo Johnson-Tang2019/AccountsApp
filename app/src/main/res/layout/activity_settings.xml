@@ -98,6 +98,27 @@
             </com.google.android.material.card.MaterialCardView>
 
             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:layout_marginTop="24dp" android:text="消息辅助识别" android:textColor="@color/text_primary"
+                android:textSize="17sp" android:textStyle="bold" />
+            <com.google.android.material.card.MaterialCardView android:id="@+id/notificationAccessCard"
+                android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="10dp"
+                android:clickable="true" android:focusable="true" android:foreground="?attr/selectableItemBackground"
+                app:cardBackgroundColor="@color/glass_white" app:cardCornerRadius="22dp" app:cardElevation="0dp"
+                app:strokeColor="@color/glass_stroke" app:strokeWidth="1dp">
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="18dp">
+                    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical" android:orientation="horizontal">
+                        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="读取支付消息记账" android:textColor="@color/text_primary" android:textSize="15sp" android:textStyle="bold" />
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:text="屏幕内容不可读时，用微信或支付宝通知补充识别" android:textColor="@color/text_secondary" android:textSize="11sp" />
+                        </LinearLayout>
+                        <com.google.android.material.switchmaterial.SwitchMaterial android:id="@+id/messageRecognitionSwitch" android:layout_width="wrap_content" android:layout_height="wrap_content" app:thumbTint="@color/switch_thumb_tint" app:trackTint="@color/switch_track_tint" />
+                    </LinearLayout>
+                    <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginVertical="12dp" android:background="@color/pink_line" />
+                    <TextView android:id="@+id/notificationAccessStatus" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="点击开启消息读取权限  ›" android:textColor="@color/pink_dark" android:textSize="13sp" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
                 android:layout_marginTop="24dp" android:text="数据管理" android:textColor="@color/text_primary"
                 android:textSize="17sp" android:textStyle="bold" />
             <com.google.android.material.card.MaterialCardView

@@ -26,7 +26,8 @@ class SettingsActivity : AppCompatActivity() {
                 prefs.getFloat("monthly_budget", 5000f), live, prefs.getInt("remaining_ratio", 20),
                 prefs.getBoolean("overlay_visible_enabled", true),
                 prefs.getBoolean("overlay_animation_enabled", true),
-                prefs.getBoolean("record_notification_enabled", true)
+                prefs.getBoolean("record_notification_enabled", true),
+                prefs.getBoolean("message_recognition_enabled", true)
             )
             contentResolver.openOutputStream(uri)?.use { ConfigManager.export(it, config) } ?: error("无法创建配置文件")
         }.onSuccess { Toast.makeText(this, "配置已导出", Toast.LENGTH_SHORT).show() }
@@ -44,6 +45,7 @@ class SettingsActivity : AppCompatActivity() {
                 .putBoolean("overlay_visible_enabled", config.overlayVisible)
                 .putBoolean("overlay_animation_enabled", config.overlayAnimation)
                 .putBoolean("record_notification_enabled", config.recordNotification)
+                .putBoolean("message_recognition_enabled", config.messageRecognition)
                 .apply()
             sendBroadcast(Intent(PaymentAccessibilityService.ACTION_SETTINGS_CHANGED).setPackage(packageName))
         }.onSuccess {
@@ -103,6 +105,7 @@ class SettingsActivity : AppCompatActivity() {
         val animationSwitch = findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.overlayAnimationSwitch)
         val overlaySwitch = findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.overlayVisibleSwitch)
         val notificationSwitch = findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.recordNotificationSwitch)
+        val messageSwitch = findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.messageRecognitionSwitch)
         budget.setText(prefs.getFloat("monthly_budget", 5000f).toString())
         val savedBalance = prefs.getFloat("current_balance", 0f).toDouble()
         val balanceAsOf = prefs.getLong("balance_as_of", System.currentTimeMillis())
@@ -112,6 +115,10 @@ class SettingsActivity : AppCompatActivity() {
         animationSwitch.isChecked = prefs.getBoolean("overlay_animation_enabled", true)
         overlaySwitch.isChecked = prefs.getBoolean("overlay_visible_enabled", true)
         notificationSwitch.isChecked = prefs.getBoolean("record_notification_enabled", true)
+        messageSwitch.isChecked = prefs.getBoolean("message_recognition_enabled", true)
+        findViewById<android.view.View>(R.id.notificationAccessCard).setOnClickListener {
+            startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"))
+        }
 
         fun updateRatioLabel(value: Int) {
             ratioText.text = "期望保留 $value% · 月底浅粉进度 ${(100 - value)}%"
@@ -155,6 +162,7 @@ class SettingsActivity : AppCompatActivity() {
                 .putBoolean("overlay_animation_enabled", animationSwitch.isChecked)
                 .putBoolean("overlay_visible_enabled", overlaySwitch.isChecked)
                 .putBoolean("record_notification_enabled", notificationSwitch.isChecked)
+                .putBoolean("message_recognition_enabled", messageSwitch.isChecked)
                 .putFloat("current_balance", balanceValue)
                 .putLong("balance_as_of", System.currentTimeMillis())
             editor.apply()
@@ -166,5 +174,14 @@ class SettingsActivity : AppCompatActivity() {
         @Suppress("DEPRECATION")
         val buildNumber = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) packageInfo.longVersionCode else packageInfo.versionCode.toLong()
         findViewById<TextView>(R.id.versionText).text = "版本 ${packageInfo.versionName}（构建 $buildNumber）"
+    }
+
+    override fun onResume() {
+        super.onResume()
+        val enabled = androidx.core.app.NotificationManagerCompat.getEnabledListenerPackages(this).contains(packageName)
+        findViewById<TextView>(R.id.notificationAccessStatus)?.apply {
+            text = if (enabled) "消息读取权限已开启" else "点击开启消息读取权限  ›"
+            setTextColor(getColor(if (enabled) R.color.income_green else R.color.pink_dark))
+        }
     }
 }

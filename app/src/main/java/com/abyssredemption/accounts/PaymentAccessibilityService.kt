@@ -34,6 +34,7 @@ class PaymentAccessibilityService : AccessibilityService() {
     companion object {
         const val ACTION_SETTINGS_CHANGED = "com.abyssredemption.accounts.SETTINGS_CHANGED"
         const val ACTION_PAYMENT_CONFIRMED = "com.abyssredemption.accounts.PAYMENT_CONFIRMED"
+        const val ACTION_MESSAGE_PAYMENT_RECORDED = "com.abyssredemption.accounts.MESSAGE_PAYMENT_RECORDED"
     }
     private val allowedPackages = mapOf(
         "com.eg.android.AlipayGphone" to "支付宝",
@@ -52,6 +53,8 @@ class PaymentAccessibilityService : AccessibilityService() {
     private var pendingWechatMerchant: String? = null
     private var pendingWechatUntil = 0L
     private var screenReceiverRegistered = false
+    private val unreadableCounts = mutableMapOf<String, Int>()
+    private var lastUnreadableAlertAt = 0L
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
@@ -66,6 +69,7 @@ class PaymentAccessibilityService : AccessibilityService() {
                         intent.getStringExtra("amount") ?: "0.00"
                     )
                 }
+                ACTION_MESSAGE_PAYMENT_RECORDED -> animateOverlaySuccess()
             }
         }
     }
@@ -117,8 +121,17 @@ class PaymentAccessibilityService : AccessibilityService() {
         val sourceLabel = allowedPackages[expectedPackage] ?: expectedPackage
         val root = rootInActiveWindow ?: run {
             RecognitionLogger.log(this, "no_root_$expectedPackage", "排除：${sourceLabel}活动窗口内容不可读取，可能是安全窗口或页面尚未完成加载")
+            val failures = (unreadableCounts[expectedPackage] ?: 0) + 1
+            unreadableCounts[expectedPackage] = failures
+            val now = System.currentTimeMillis()
+            if (failures >= 3 && now - lastUnreadableAlertAt >= 60_000) {
+                lastUnreadableAlertAt = now
+                PaymentNotifications.screenUnreadable(this, sourceLabel)
+                RecognitionLogger.log(this, "screen_unreadable_alert_$expectedPackage", "提醒：连续无法读取${sourceLabel}页面，已发送系统通知", 0)
+            }
             return
         }
+        unreadableCounts[expectedPackage] = 0
         val actualPackage = root.packageName?.toString() ?: run {
             RecognitionLogger.log(this, "no_package_$expectedPackage", "排除：窗口没有提供应用包名")
             return
@@ -409,6 +422,7 @@ class PaymentAccessibilityService : AccessibilityService() {
             addAction(Intent.ACTION_USER_PRESENT)
             addAction(ACTION_SETTINGS_CHANGED)
             addAction(ACTION_PAYMENT_CONFIRMED)
+            addAction(ACTION_MESSAGE_PAYMENT_RECORDED)
         }
         ContextCompat.registerReceiver(this, screenReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
         screenReceiverRegistered = true

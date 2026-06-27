@@ -10,7 +10,8 @@ data class AppConfig(
     val remainingRatio: Int,
     val overlayVisible: Boolean,
     val overlayAnimation: Boolean,
-    val recordNotification: Boolean
+    val recordNotification: Boolean,
+    val messageRecognition: Boolean
 )
 
 object ConfigManager {
@@ -24,6 +25,7 @@ object ConfigManager {
             put("overlayVisible", config.overlayVisible)
             put("overlayAnimation", config.overlayAnimation)
             put("recordNotification", config.recordNotification)
+            put("messageRecognition", config.messageRecognition)
         }
         output.bufferedWriter(Charsets.UTF_8).use { it.write(json.toString(2)) }
     }
@@ -44,7 +46,8 @@ object ConfigManager {
             budget, balance, ratio,
             json.optBoolean("overlayVisible", true),
             json.optBoolean("overlayAnimation", true),
-            json.optBoolean("recordNotification", true)
+            json.optBoolean("recordNotification", true),
+            json.optBoolean("messageRecognition", true)
         )
     }
 }
