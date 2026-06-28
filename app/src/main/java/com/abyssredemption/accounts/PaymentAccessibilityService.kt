@@ -177,6 +177,7 @@ class PaymentAccessibilityService : AccessibilityService() {
         val texts = mutableListOf<String>()
         collectVisibleText(root, texts)
         val page = texts.joinToString(" ")
+        val visibleAmount = findAmount(texts, page)
         val sourceName = allowedPackages[actualPackage] ?: when {
             page.contains("微信支付") -> "微信"
             page.contains("支付宝") -> "支付宝"
@@ -193,6 +194,10 @@ class PaymentAccessibilityService : AccessibilityService() {
             (page.contains("微信红包") || page.contains("转账") || page.contains("收付款"))
         val isWechatSuccessPage = actualPackage == "com.tencent.mm" && hasSuccessText &&
             (page.contains("微信支付") || page.contains("微信红包") || page.contains("转账") || page.contains("收付款"))
+        // 微信新版紧凑结果页不再显示“微信支付”字样，只保留状态、商户、金额和“返回商家”。
+        val isWechatCompactSuccessPage = actualPackage == "com.tencent.mm" &&
+            hasSuccessText && visibleAmount != null && resultPageWords.any(page::contains) &&
+            historyPageWords.none(page::contains)
         val now = System.currentTimeMillis()
         val hasRecentWechatPaymentCandidate = actualPackage == "com.tencent.mm" &&
             pendingWechatAmount != null &&
@@ -217,7 +222,7 @@ class PaymentAccessibilityService : AccessibilityService() {
             return
         }
         val accepted = if (actualPackage == "com.tencent.mm") {
-            isWechatConfirmedPayment || isWechatSuccessPage || isWechatFastResultPage
+            isWechatConfirmedPayment || isWechatSuccessPage || isWechatCompactSuccessPage || isWechatFastResultPage
         } else if (actualPackage !in allowedPackages) {
             hasSuccessText && resultPageWords.any(page::contains) && historyPageWords.none(page::contains)
         } else {
@@ -229,12 +234,12 @@ class PaymentAccessibilityService : AccessibilityService() {
             RecognitionLogger.log(
                 this,
                 "no_marker_$actualPackage",
-                "排除：未找到成功或已确认支付标记（节点 ${texts.size}，微信支付=$wechatPay，微信红包=$redPacket）"
+                "排除：未找到成功或已确认支付标记（节点 ${texts.size}，微信支付=$wechatPay，微信红包=$redPacket，紧凑结果页=$isWechatCompactSuccessPage）"
             )
             return
         }
 
-        val amount = findAmount(texts, page) ?: pendingWechatAmount?.takeIf {
+        val amount = visibleAmount ?: pendingWechatAmount?.takeIf {
             actualPackage == "com.tencent.mm" && isWechatFastResultPage
         } ?: run {
             RecognitionLogger.log(this, "no_amount_$actualPackage", "排除：已找到支付状态，但未读取到金额（节点 ${texts.size}）")
