@@ -4,6 +4,8 @@ import android.content.Intent
 import android.os.Bundle
 import android.os.Build
 import android.widget.*
+import android.app.AlertDialog
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
@@ -16,6 +18,19 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private val prefs by lazy { getSharedPreferences("budget_settings", MODE_PRIVATE) }
+    private lateinit var budgetInput: EditText
+    private lateinit var balanceInput: EditText
+    private lateinit var ratioInput: SeekBar
+    private lateinit var animationSwitch: com.google.android.material.switchmaterial.SwitchMaterial
+    private lateinit var overlaySwitch: com.google.android.material.switchmaterial.SwitchMaterial
+    private lateinit var notificationSwitch: com.google.android.material.switchmaterial.SwitchMaterial
+    private lateinit var messageSwitch: com.google.android.material.switchmaterial.SwitchMaterial
+    private lateinit var initialState: SettingsState
+
+    private data class SettingsState(
+        val budget: Float?, val balance: Float?, val ratio: Int,
+        val animation: Boolean, val overlay: Boolean, val notification: Boolean, val message: Boolean
+    )
     private val configExportLauncher = registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         if (uri == null) return@registerForActivityResult
         runCatching {
@@ -97,21 +112,29 @@ class SettingsActivity : AppCompatActivity() {
             insets
         }
         ViewCompat.requestApplyInsets(header)
+        val saveBar = findViewById<android.view.View>(R.id.settingsSaveBar)
+        val initialSaveBottom = saveBar.paddingBottom
+        ViewCompat.setOnApplyWindowInsetsListener(saveBar) { view, insets ->
+            val safeBottom = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
+            view.setPadding(view.paddingLeft, view.paddingTop, view.paddingRight, initialSaveBottom + safeBottom)
+            insets
+        }
+        ViewCompat.requestApplyInsets(saveBar)
 
-        val budget = findViewById<EditText>(R.id.settingBudget)
-        val balance = findViewById<EditText>(R.id.settingBalance)
-        val ratio = findViewById<SeekBar>(R.id.remainingRatio)
+        budgetInput = findViewById(R.id.settingBudget)
+        balanceInput = findViewById(R.id.settingBalance)
+        ratioInput = findViewById(R.id.remainingRatio)
         val ratioText = findViewById<TextView>(R.id.remainingRatioText)
-        val animationSwitch = findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.overlayAnimationSwitch)
-        val overlaySwitch = findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.overlayVisibleSwitch)
-        val notificationSwitch = findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.recordNotificationSwitch)
-        val messageSwitch = findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.messageRecognitionSwitch)
-        budget.setText(prefs.getFloat("monthly_budget", 5000f).toString())
+        animationSwitch = findViewById(R.id.overlayAnimationSwitch)
+        overlaySwitch = findViewById(R.id.overlayVisibleSwitch)
+        notificationSwitch = findViewById(R.id.recordNotificationSwitch)
+        messageSwitch = findViewById(R.id.messageRecognitionSwitch)
+        budgetInput.setText(prefs.getFloat("monthly_budget", 5000f).toString())
         val savedBalance = prefs.getFloat("current_balance", 0f).toDouble()
         val balanceAsOf = prefs.getLong("balance_as_of", System.currentTimeMillis())
         val liveBalance = AccountDb(this).use { savedBalance + it.netChangeSince(balanceAsOf) }
-        balance.setText(java.text.DecimalFormat("0.00").format(liveBalance))
-        ratio.progress = prefs.getInt("remaining_ratio", 20)
+        balanceInput.setText(java.text.DecimalFormat("0.00").format(liveBalance))
+        ratioInput.progress = prefs.getInt("remaining_ratio", 20)
         animationSwitch.isChecked = prefs.getBoolean("overlay_animation_enabled", true)
         overlaySwitch.isChecked = prefs.getBoolean("overlay_visible_enabled", true)
         notificationSwitch.isChecked = prefs.getBoolean("record_notification_enabled", true)
@@ -123,14 +146,18 @@ class SettingsActivity : AppCompatActivity() {
         fun updateRatioLabel(value: Int) {
             ratioText.text = "期望保留 $value% · 月底浅粉进度 ${(100 - value)}%"
         }
-        updateRatioLabel(ratio.progress)
-        ratio.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+        updateRatioLabel(ratioInput.progress)
+        ratioInput.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) = updateRatioLabel(progress)
             override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
             override fun onStopTrackingTouch(seekBar: SeekBar?) = Unit
         })
 
-        findViewById<android.view.View>(R.id.backButton).setOnClickListener { finish() }
+        initialState = currentState()
+        findViewById<android.view.View>(R.id.backButton).setOnClickListener { requestExit() }
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() = requestExit()
+        })
         findViewById<android.view.View>(R.id.openRecognitionLog).setOnClickListener {
             startActivity(Intent(this, RecognitionLogActivity::class.java))
         }
@@ -151,29 +178,62 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<android.view.View>(R.id.manualUpdate).setOnClickListener {
             UpdateUi.checkForUpdates(this, manual = true)
         }
-        findViewById<android.view.View>(R.id.saveSettings).setOnClickListener {
-            val budgetValue = budget.text.toString().toFloatOrNull()
-            val balanceValue = balance.text.toString().toFloatOrNull()
-            if (budgetValue == null || budgetValue <= 0f) { budget.error = "请输入大于 0 的预算"; return@setOnClickListener }
-            if (balanceValue == null) { balance.error = "请输入正确余额"; return@setOnClickListener }
-            val editor = prefs.edit()
-                .putFloat("monthly_budget", budgetValue)
-                .putInt("remaining_ratio", ratio.progress)
-                .putBoolean("overlay_animation_enabled", animationSwitch.isChecked)
-                .putBoolean("overlay_visible_enabled", overlaySwitch.isChecked)
-                .putBoolean("record_notification_enabled", notificationSwitch.isChecked)
-                .putBoolean("message_recognition_enabled", messageSwitch.isChecked)
-                .putFloat("current_balance", balanceValue)
-                .putLong("balance_as_of", System.currentTimeMillis())
-            editor.apply()
-            sendBroadcast(Intent(PaymentAccessibilityService.ACTION_SETTINGS_CHANGED).setPackage(packageName))
-            Toast.makeText(this, "设置已保存", Toast.LENGTH_SHORT).show()
-            finish()
-        }
+        findViewById<android.view.View>(R.id.saveSettings).setOnClickListener { saveSettingsAndExit() }
         val packageInfo = packageManager.getPackageInfo(packageName, 0)
         @Suppress("DEPRECATION")
         val buildNumber = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) packageInfo.longVersionCode else packageInfo.versionCode.toLong()
         findViewById<TextView>(R.id.versionText).text = "版本 ${packageInfo.versionName}（构建 $buildNumber）"
+    }
+
+    private fun currentState() = SettingsState(
+        budgetInput.text.toString().toFloatOrNull(), balanceInput.text.toString().toFloatOrNull(), ratioInput.progress,
+        animationSwitch.isChecked, overlaySwitch.isChecked, notificationSwitch.isChecked, messageSwitch.isChecked
+    )
+
+    private fun saveSettingsAndExit(): Boolean {
+        val state = currentState()
+        val budgetValue = state.budget
+        val balanceValue = state.balance
+        if (budgetValue == null || budgetValue <= 0f) {
+            budgetInput.error = "请输入大于 0 的预算"
+            budgetInput.requestFocus()
+            return false
+        }
+        if (balanceValue == null) {
+            balanceInput.error = "请输入正确余额"
+            balanceInput.requestFocus()
+            return false
+        }
+        prefs.edit()
+            .putFloat("monthly_budget", budgetValue)
+            .putInt("remaining_ratio", state.ratio)
+            .putBoolean("overlay_animation_enabled", state.animation)
+            .putBoolean("overlay_visible_enabled", state.overlay)
+            .putBoolean("record_notification_enabled", state.notification)
+            .putBoolean("message_recognition_enabled", state.message)
+            .putFloat("current_balance", balanceValue)
+            .putLong("balance_as_of", System.currentTimeMillis())
+            .apply()
+        sendBroadcast(Intent(PaymentAccessibilityService.ACTION_SETTINGS_CHANGED).setPackage(packageName))
+        initialState = state
+        Toast.makeText(this, "设置已保存", Toast.LENGTH_SHORT).show()
+        finish()
+        return true
+    }
+
+    private fun requestExit() {
+        if (currentState() == initialState) {
+            finish()
+            return
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("保存设置更改？")
+            .setMessage("你修改了设置，但还没有保存。")
+            .setNegativeButton("继续编辑", null)
+            .setNeutralButton("不保存") { _, _ -> finish() }
+            .setPositiveButton("保存") { _, _ -> saveSettingsAndExit() }
+            .create()
+        PinkDialogs.show(dialog)
     }
 
     override fun onResume() {

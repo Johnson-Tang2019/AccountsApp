@@ -164,13 +164,8 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
-            <com.google.android.material.button.MaterialButton android:id="@+id/saveSettings"
-                android:layout_width="match_parent" android:layout_height="54dp" android:layout_marginTop="26dp"
-                android:text="保存设置" android:textColor="@color/white" android:textSize="16sp"
-                app:backgroundTint="@color/pink_primary" app:cornerRadius="18dp" />
-
             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                android:layout_marginTop="26dp" android:text="关于应用" android:textColor="@color/text_primary"
+                android:layout_marginTop="24dp" android:text="关于应用" android:textColor="@color/text_primary"
                 android:textSize="17sp" android:textStyle="bold" />
             <com.google.android.material.card.MaterialCardView android:id="@+id/manualUpdate"
                 android:layout_width="match_parent" android:layout_height="64dp" android:layout_marginTop="10dp"
@@ -223,4 +218,15 @@
             </com.google.android.material.card.MaterialCardView>
         </LinearLayout>
     </ScrollView>
+
+    <LinearLayout android:id="@+id/settingsSaveBar"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:background="@color/pink_canvas" android:orientation="vertical"
+        android:paddingStart="18dp" android:paddingTop="10dp" android:paddingEnd="18dp" android:paddingBottom="12dp">
+        <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginBottom="10dp" android:background="@color/pink_line" />
+        <com.google.android.material.button.MaterialButton android:id="@+id/saveSettings"
+            android:layout_width="match_parent" android:layout_height="54dp"
+            android:text="保存设置" android:textColor="@color/white" android:textSize="16sp"
+            app:backgroundTint="@color/pink_primary" app:cornerRadius="18dp" />
+    </LinearLayout>
 </LinearLayout>
