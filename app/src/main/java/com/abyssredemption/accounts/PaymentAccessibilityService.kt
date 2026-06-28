@@ -43,6 +43,8 @@ class PaymentAccessibilityService : AccessibilityService() {
     private val successWords = listOf(
         "支付成功", "付款成功", "支付完成", "交易成功", "转账成功", "红包已发送"
     )
+    private val resultPageWords = listOf("返回商家", "完成", "支付详情", "查看订单", "订单详情")
+    private val historyPageWords = listOf("交易记录", "账单历史", "全部订单", "订单列表")
     private val amountRegex = Regex("(?:[¥￥]\\s*|金额[：:]?\\s*)([0-9][0-9,]*(?:\\.[0-9]{1,2})?)")
     private val handler = Handler(Looper.getMainLooper())
     private var pendingPackage: String? = null
@@ -95,10 +97,20 @@ class PaymentAccessibilityService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         val pkg = event?.packageName?.toString() ?: return
-        if (pkg !in allowedPackages) return
         if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
             event.eventType != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED &&
             event.eventType != AccessibilityEvent.TYPE_VIEW_SCROLLED) return
+
+        if (pkg !in allowedPackages) {
+            val eventText = event.text.joinToString(" ")
+            val eventLooksLikeResult = successWords.any(eventText::contains) || resultPageWords.any(eventText::contains)
+            if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED || eventLooksLikeResult) {
+                inspectThirdPartyPaymentWindow(pkg)
+                handler.postDelayed({ inspectThirdPartyPaymentWindow(pkg) }, 350)
+                handler.postDelayed({ inspectThirdPartyPaymentWindow(pkg) }, 1_200)
+            }
+            return
+        }
 
         val source = allowedPackages[pkg] ?: pkg
         getSharedPreferences("service_state", MODE_PRIVATE).edit()
@@ -117,8 +129,30 @@ class PaymentAccessibilityService : AccessibilityService() {
         handler.postDelayed(parseTask, 650)
     }
 
+    private fun inspectThirdPartyPaymentWindow(expectedPackage: String) {
+        val root = rootInActiveWindow ?: return
+        if (root.packageName?.toString() != expectedPackage) return
+        val texts = mutableListOf<String>()
+        collectVisibleText(root, texts)
+        if (texts.isEmpty()) return
+        val page = texts.joinToString(" ")
+        val hasSuccess = successWords.any(page::contains)
+        val hasResultAction = resultPageWords.any(page::contains)
+        val hasHistoryMarker = historyPageWords.any(page::contains)
+        val amount = findAmount(texts, page)
+        if (hasSuccess && hasResultAction && !hasHistoryMarker && amount != null) {
+            RecognitionLogger.log(
+                this,
+                "third_party_candidate_$expectedPackage",
+                "发现第三方支付结果页：包名=$expectedPackage，节点=${texts.size}，金额=¥$amount",
+                0
+            )
+            parseCurrentWindow(expectedPackage)
+        }
+    }
+
     private fun parseCurrentWindow(expectedPackage: String) {
-        val sourceLabel = allowedPackages[expectedPackage] ?: expectedPackage
+        val sourceLabel = allowedPackages[expectedPackage] ?: "第三方支付"
         val root = rootInActiveWindow ?: run {
             RecognitionLogger.log(this, "no_root_$expectedPackage", "排除：${sourceLabel}活动窗口内容不可读取，可能是安全窗口或页面尚未完成加载")
             val failures = (unreadableCounts[expectedPackage] ?: 0) + 1
@@ -140,10 +174,14 @@ class PaymentAccessibilityService : AccessibilityService() {
             RecognitionLogger.log(this, "package_changed_$expectedPackage", "排除：采样时窗口已切换到其他应用")
             return
         }
-        val sourceName = allowedPackages[actualPackage] ?: return
         val texts = mutableListOf<String>()
         collectVisibleText(root, texts)
         val page = texts.joinToString(" ")
+        val sourceName = allowedPackages[actualPackage] ?: when {
+            page.contains("微信支付") -> "微信"
+            page.contains("支付宝") -> "支付宝"
+            else -> "第三方支付"
+        }
         val hasSuccessText = successWords.any(page::contains)
         val prePaymentWords = listOf("确认付款", "立即付款", "输入支付密码", "使用密码", "确认支付")
         val isPrePaymentPage = prePaymentWords.any(page::contains)
@@ -180,6 +218,8 @@ class PaymentAccessibilityService : AccessibilityService() {
         }
         val accepted = if (actualPackage == "com.tencent.mm") {
             isWechatConfirmedPayment || isWechatSuccessPage || isWechatFastResultPage
+        } else if (actualPackage !in allowedPackages) {
+            hasSuccessText && resultPageWords.any(page::contains) && historyPageWords.none(page::contains)
         } else {
             hasSuccessText
         }
@@ -204,8 +244,8 @@ class PaymentAccessibilityService : AccessibilityService() {
             ?: pendingWechatMerchant?.takeIf { actualPackage == "com.tencent.mm" && isWechatFastResultPage }
             ?: "${sourceName}商户"
         val database = AccountDb(applicationContext)
-        if (database.hasRecentPayment(amount.toDouble(), sourceName, now - 30_000)) {
-            RecognitionLogger.log(this, "recent_duplicate_${sourceName}_$amount", "排除：30 秒内已有相同来源和金额的记录", 0)
+        if (database.hasRecentPayment(amount.toDouble(), now - 60_000)) {
+            RecognitionLogger.log(this, "recent_duplicate_${sourceName}_$amount", "排除：60 秒内已有相同金额的记录，避免屏幕和消息重复记账", 0)
             return
         }
         val previous = database.recent().firstOrNull()

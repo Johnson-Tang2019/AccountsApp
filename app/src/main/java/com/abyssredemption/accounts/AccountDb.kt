@@ -172,5 +172,11 @@ class AccountDb(context: Context) : SQLiteOpenHelper(context, "accounts.db", nul
             arrayOf(source, amount.toString(), since.toString())
         ).use { it.moveToFirst() }
 
+    fun hasRecentPayment(amount: Double, since: Long): Boolean =
+        readableDatabase.rawQuery(
+            "SELECT 1 FROM payments WHERE ABS(amount-?)<0.001 AND paid_at>=? LIMIT 1",
+            arrayOf(amount.toString(), since.toString())
+        ).use { it.moveToFirst() }
+
     fun delete(id: Long) = writableDatabase.delete("payments", "id=?", arrayOf(id.toString()))
 }

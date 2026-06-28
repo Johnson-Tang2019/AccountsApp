@@ -57,8 +57,8 @@ class PaymentNotificationListenerService : NotificationListenerService() {
         val value = amount.toDoubleOrNull()?.takeIf { it > 0.0 } ?: return
         val now = sbn.postTime.takeIf { it > 0 } ?: System.currentTimeMillis()
         val db = AccountDb(applicationContext)
-        if (db.hasRecentPayment(value, source, now - 60_000)) {
-            RecognitionLogger.log(this, "message_duplicate_${source}_$amount", "消息排除：60 秒内已有相同来源和金额的记录", 0)
+        if (db.hasRecentPayment(value, now - 60_000)) {
+            RecognitionLogger.log(this, "message_duplicate_${source}_$amount", "消息排除：60 秒内已有相同金额的记录，避免与屏幕识别重复", 0)
             return
         }
         val merchant = findMerchant(parts, source)
