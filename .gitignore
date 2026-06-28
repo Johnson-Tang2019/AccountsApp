@@ -21,6 +21,7 @@ keystore.properties
 *.aab
 !releases/
 !releases/*.apk
+!releases/**/*.apk
 
 # Native build outputs
 .cxx/
