@@ -19,6 +19,8 @@ local.properties
 keystore.properties
 *.apk
 *.aab
+!releases/
+!releases/*.apk
 
 # Native build outputs
 .cxx/
@@ -40,4 +42,3 @@ desktop.ini
 .agents/
 .codex/
 .codex-remote-attachments/
-
