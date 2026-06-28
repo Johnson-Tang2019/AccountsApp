@@ -25,11 +25,13 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var overlaySwitch: com.google.android.material.switchmaterial.SwitchMaterial
     private lateinit var notificationSwitch: com.google.android.material.switchmaterial.SwitchMaterial
     private lateinit var messageSwitch: com.google.android.material.switchmaterial.SwitchMaterial
+    private lateinit var updateSourceGroup: com.google.android.material.button.MaterialButtonToggleGroup
     private lateinit var initialState: SettingsState
 
     private data class SettingsState(
         val budget: Float?, val balance: Float?, val ratio: Int,
-        val animation: Boolean, val overlay: Boolean, val notification: Boolean, val message: Boolean
+        val animation: Boolean, val overlay: Boolean, val notification: Boolean, val message: Boolean,
+        val updateSource: String
     )
     private val configExportLauncher = registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         if (uri == null) return@registerForActivityResult
@@ -42,7 +44,8 @@ class SettingsActivity : AppCompatActivity() {
                 prefs.getBoolean("overlay_visible_enabled", true),
                 prefs.getBoolean("overlay_animation_enabled", true),
                 prefs.getBoolean("record_notification_enabled", true),
-                prefs.getBoolean("message_recognition_enabled", true)
+                prefs.getBoolean("message_recognition_enabled", true),
+                prefs.getString("update_source", UpdateSource.AUTO.value) ?: UpdateSource.AUTO.value
             )
             contentResolver.openOutputStream(uri)?.use { ConfigManager.export(it, config) } ?: error("无法创建配置文件")
         }.onSuccess { Toast.makeText(this, "配置已导出", Toast.LENGTH_SHORT).show() }
@@ -61,6 +64,7 @@ class SettingsActivity : AppCompatActivity() {
                 .putBoolean("overlay_animation_enabled", config.overlayAnimation)
                 .putBoolean("record_notification_enabled", config.recordNotification)
                 .putBoolean("message_recognition_enabled", config.messageRecognition)
+                .putString("update_source", config.updateSource)
                 .apply()
             sendBroadcast(Intent(PaymentAccessibilityService.ACTION_SETTINGS_CHANGED).setPackage(packageName))
         }.onSuccess {
@@ -129,6 +133,7 @@ class SettingsActivity : AppCompatActivity() {
         overlaySwitch = findViewById(R.id.overlayVisibleSwitch)
         notificationSwitch = findViewById(R.id.recordNotificationSwitch)
         messageSwitch = findViewById(R.id.messageRecognitionSwitch)
+        updateSourceGroup = findViewById(R.id.updateSourceGroup)
         budgetInput.setText(prefs.getFloat("monthly_budget", 5000f).toString())
         val savedBalance = prefs.getFloat("current_balance", 0f).toDouble()
         val balanceAsOf = prefs.getLong("balance_as_of", System.currentTimeMillis())
@@ -139,6 +144,12 @@ class SettingsActivity : AppCompatActivity() {
         overlaySwitch.isChecked = prefs.getBoolean("overlay_visible_enabled", true)
         notificationSwitch.isChecked = prefs.getBoolean("record_notification_enabled", true)
         messageSwitch.isChecked = prefs.getBoolean("message_recognition_enabled", true)
+        val savedUpdateSource = UpdateSource.from(prefs.getString("update_source", UpdateSource.AUTO.value))
+        updateSourceGroup.check(when (savedUpdateSource) {
+            UpdateSource.AUTO -> R.id.updateSourceAuto
+            UpdateSource.GITHUB -> R.id.updateSourceGithub
+            UpdateSource.GITEE -> R.id.updateSourceGitee
+        })
         findViewById<android.view.View>(R.id.notificationAccessCard).setOnClickListener {
             startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"))
         }
@@ -187,7 +198,12 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun currentState() = SettingsState(
         budgetInput.text.toString().toFloatOrNull(), balanceInput.text.toString().toFloatOrNull(), ratioInput.progress,
-        animationSwitch.isChecked, overlaySwitch.isChecked, notificationSwitch.isChecked, messageSwitch.isChecked
+        animationSwitch.isChecked, overlaySwitch.isChecked, notificationSwitch.isChecked, messageSwitch.isChecked,
+        when (updateSourceGroup.checkedButtonId) {
+            R.id.updateSourceGithub -> UpdateSource.GITHUB.value
+            R.id.updateSourceGitee -> UpdateSource.GITEE.value
+            else -> UpdateSource.AUTO.value
+        }
     )
 
     private fun saveSettingsAndExit(): Boolean {
@@ -211,6 +227,7 @@ class SettingsActivity : AppCompatActivity() {
             .putBoolean("overlay_visible_enabled", state.overlay)
             .putBoolean("record_notification_enabled", state.notification)
             .putBoolean("message_recognition_enabled", state.message)
+            .putString("update_source", state.updateSource)
             .putFloat("current_balance", balanceValue)
             .putLong("balance_as_of", System.currentTimeMillis())
             .apply()

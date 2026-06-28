@@ -10,36 +10,59 @@ data class ReleaseInfo(
     val version: String,
     val downloadUrl: String,
     val pageUrl: String,
-    val notes: String
+    val notes: String,
+    val source: UpdateSource
 )
+
+enum class UpdateSource(val value: String, val label: String) {
+    AUTO("auto", "自动选择"), GITHUB("github", "GitHub"), GITEE("gitee", "Gitee");
+
+    companion object {
+        fun from(value: String?) = entries.firstOrNull { it.value == value } ?: AUTO
+    }
+}
 
 object UpdateManager {
     private const val LATEST_RELEASE_API = "https://api.github.com/repos/Johnson-Tang2019/AccountsApp/releases/latest"
+    private const val GITEE_VERSION_URL = "https://gitee.com/JohnsonTang2019/AccountsApp/raw/main/releases/latest/README.md"
+    private const val GITEE_APK_URL = "https://gitee.com/JohnsonTang2019/AccountsApp/raw/main/releases/latest/app-release.apk"
+    private const val GITEE_PAGE_URL = "https://gitee.com/JohnsonTang2019/AccountsApp/tree/main/releases/latest"
 
-    fun check(currentVersion: String, callback: (Result<ReleaseInfo?>) -> Unit) {
+    fun check(currentVersion: String, source: UpdateSource, callback: (Result<ReleaseInfo?>) -> Unit) {
         Thread {
-            callback(runCatching {
-                val connection = openConnection(LATEST_RELEASE_API)
-                val response = connection.inputStream.bufferedReader().use { it.readText() }
-                val json = JSONObject(response)
-                val latest = json.getString("tag_name").removePrefix("v")
-                val assets = json.getJSONArray("assets")
-                var apkUrl = ""
-                for (index in 0 until assets.length()) {
-                    val asset = assets.getJSONObject(index)
-                    if (asset.getString("name").endsWith(".apk", true)) {
-                        apkUrl = asset.getString("browser_download_url")
-                        break
-                    }
-                }
-                if (apkUrl.isBlank() || compareVersions(latest, currentVersion) <= 0) null else ReleaseInfo(
-                    version = latest,
-                    downloadUrl = apkUrl,
-                    pageUrl = json.getString("html_url"),
-                    notes = json.optString("body")
-                )
+            callback(when (source) {
+                UpdateSource.GITHUB -> runCatching { checkGitHub(currentVersion) }
+                UpdateSource.GITEE -> runCatching { checkGitee(currentVersion) }
+                UpdateSource.AUTO -> runCatching { checkGitHub(currentVersion) }
+                    .recoverCatching { checkGitee(currentVersion) }
             })
         }.start()
+    }
+
+    private fun checkGitHub(currentVersion: String): ReleaseInfo? {
+        val response = openConnection(LATEST_RELEASE_API, "GitHub").inputStream.bufferedReader().use { it.readText() }
+        val json = JSONObject(response)
+        val latest = json.getString("tag_name").removePrefix("v")
+        val assets = json.getJSONArray("assets")
+        var apkUrl = ""
+        for (index in 0 until assets.length()) {
+            val asset = assets.getJSONObject(index)
+            if (asset.getString("name").endsWith(".apk", true)) {
+                apkUrl = asset.getString("browser_download_url")
+                break
+            }
+        }
+        return if (apkUrl.isBlank() || compareVersions(latest, currentVersion) <= 0) null else ReleaseInfo(
+            latest, apkUrl, json.getString("html_url"), json.optString("body"), UpdateSource.GITHUB
+        )
+    }
+
+    private fun checkGitee(currentVersion: String): ReleaseInfo? {
+        val text = openConnection(GITEE_VERSION_URL, "Gitee").inputStream.bufferedReader().use { it.readText() }
+        val latest = parseGiteeVersion(text) ?: error("Gitee 版本信息无效")
+        return if (compareVersions(latest, currentVersion) <= 0) null else ReleaseInfo(
+            latest, GITEE_APK_URL, GITEE_PAGE_URL, "从 Gitee 镜像下载最新正式版本。", UpdateSource.GITEE
+        )
     }
 
     fun download(
@@ -51,10 +74,11 @@ object UpdateManager {
     ) {
         Thread {
             callback(runCatching {
-                require(URL(release.downloadUrl).host.equals("github.com", true)) { "下载地址不是 GitHub" }
+                val host = URL(release.downloadUrl).host.lowercase()
+                require(host == "github.com" || host == "gitee.com") { "下载地址不受信任" }
                 val directory = File(context.cacheDir, "updates").apply { mkdirs() }
                 val target = File(directory, "AccountsApp-${release.version}.apk")
-                val connection = openConnection(release.downloadUrl)
+                val connection = openConnection(release.downloadUrl, release.source.label)
                 val total = connection.contentLengthLong
                 connection.inputStream.use { input ->
                     target.outputStream().buffered().use { output ->
@@ -77,14 +101,18 @@ object UpdateManager {
         }.start()
     }
 
-    private fun openConnection(url: String): HttpURLConnection = (URL(url).openConnection() as HttpURLConnection).apply {
+    private fun openConnection(url: String, source: String): HttpURLConnection = (URL(url).openConnection() as HttpURLConnection).apply {
         connectTimeout = 15_000
         readTimeout = 30_000
         instanceFollowRedirects = true
-        setRequestProperty("Accept", "application/vnd.github+json")
+        setRequestProperty("Accept", if (source == "GitHub") "application/vnd.github+json" else "*/*")
         setRequestProperty("User-Agent", "AccountsApp-Android")
-        check(responseCode in 200..299) { "GitHub 请求失败：HTTP $responseCode" }
+        check(responseCode in 200..299) { "$source 请求失败：HTTP $responseCode" }
     }
+
+    internal fun parseGiteeVersion(text: String): String? =
+        Regex("(?:Latest version:\\s*)?v?(\\d+(?:\\.\\d+){1,3})", RegexOption.IGNORE_CASE)
+            .find(text)?.groupValues?.get(1)
 
     internal fun compareVersions(left: String, right: String): Int {
         val a = left.substringBefore('-').split('.').map { it.toIntOrNull() ?: 0 }

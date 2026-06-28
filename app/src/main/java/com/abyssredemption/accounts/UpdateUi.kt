@@ -18,6 +18,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 object UpdateUi {
     fun checkForUpdates(activity: AppCompatActivity, manual: Boolean) {
         val currentVersion = activity.packageManager.getPackageInfo(activity.packageName, 0).versionName.orEmpty()
+        val source = UpdateSource.from(activity.getSharedPreferences("budget_settings", AppCompatActivity.MODE_PRIVATE)
+            .getString("update_source", UpdateSource.AUTO.value))
         val checking = if (manual) {
             val density = activity.resources.displayMetrics.density
             val spinner = ProgressBar(activity).also(PinkDialogs::styleProgress)
@@ -28,7 +30,7 @@ object UpdateUi {
                 setPadding(padding, (8 * density).toInt(), padding, (8 * density).toInt())
                 addView(spinner, (34 * density).toInt(), (34 * density).toInt())
                 addView(TextView(activity).apply {
-                    text = "正在连接 GitHub…"
+                    text = if (source == UpdateSource.AUTO) "正在自动选择更新服务器…" else "正在连接 ${source.label}…"
                     textSize = 14f
                     setTextColor(android.graphics.Color.rgb(61, 52, 55))
                     setPadding((14 * density).toInt(), 0, 0, 0)
@@ -38,7 +40,7 @@ object UpdateUi {
                 .also(PinkDialogs::show)
         } else null
 
-        UpdateManager.check(currentVersion) { result ->
+        UpdateManager.check(currentVersion, source) { result ->
             activity.runOnUiThread {
                 checking?.dismiss()
                 if (activity.isFinishing || activity.isDestroyed) return@runOnUiThread
@@ -84,7 +86,7 @@ object UpdateUi {
                 }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
             })
             addView(TextView(activity).apply {
-                text = summary.ifBlank { "GitHub 已发布新版本。"
+                text = summary.ifBlank { "${release.source.label} 已发布新版本。"
                 }
                 textSize = 13f
                 setTextColor(android.graphics.Color.rgb(97, 80, 86))

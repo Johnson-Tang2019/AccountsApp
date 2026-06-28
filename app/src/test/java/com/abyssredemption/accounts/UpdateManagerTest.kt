@@ -12,4 +12,9 @@ class UpdateManagerTest {
         assertEquals(0, UpdateManager.compareVersions("1.0.22", "1.0.22"))
         assertEquals(0, UpdateManager.compareVersions("1.0.22", "1.0.22-beta"))
     }
+
+    @Test
+    fun parsesGiteeLatestVersionFile() {
+        assertEquals("1.0.40", UpdateManager.parseGiteeVersion("Latest version: v1.0.40"))
+    }
 }

@@ -11,7 +11,8 @@ data class AppConfig(
     val overlayVisible: Boolean,
     val overlayAnimation: Boolean,
     val recordNotification: Boolean,
-    val messageRecognition: Boolean
+    val messageRecognition: Boolean,
+    val updateSource: String
 )
 
 object ConfigManager {
@@ -26,6 +27,7 @@ object ConfigManager {
             put("overlayAnimation", config.overlayAnimation)
             put("recordNotification", config.recordNotification)
             put("messageRecognition", config.messageRecognition)
+            put("updateSource", config.updateSource)
         }
         output.bufferedWriter(Charsets.UTF_8).use { it.write(json.toString(2)) }
     }
@@ -47,7 +49,10 @@ object ConfigManager {
             json.optBoolean("overlayVisible", true),
             json.optBoolean("overlayAnimation", true),
             json.optBoolean("recordNotification", true),
-            json.optBoolean("messageRecognition", true)
+            json.optBoolean("messageRecognition", true),
+            json.optString("updateSource", UpdateSource.AUTO.value).takeIf { value ->
+                UpdateSource.entries.any { it.value == value }
+            } ?: UpdateSource.AUTO.value
         )
     }
 }

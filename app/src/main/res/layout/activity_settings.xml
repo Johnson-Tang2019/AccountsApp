@@ -167,6 +167,30 @@
             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
                 android:layout_marginTop="24dp" android:text="关于应用" android:textColor="@color/text_primary"
                 android:textSize="17sp" android:textStyle="bold" />
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="10dp"
+                app:cardBackgroundColor="@color/glass_white" app:cardCornerRadius="22dp" app:cardElevation="0dp"
+                app:strokeColor="@color/glass_stroke" app:strokeWidth="1dp">
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="18dp">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:text="更新来源" android:textColor="@color/text_primary" android:textSize="15sp" android:textStyle="bold" />
+                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp"
+                        android:text="自动模式优先连接 GitHub，网络失败时切换到 Gitee。" android:textColor="@color/text_secondary" android:textSize="11sp" />
+                    <com.google.android.material.button.MaterialButtonToggleGroup android:id="@+id/updateSourceGroup"
+                        android:layout_width="match_parent" android:layout_height="48dp" android:layout_marginTop="14dp"
+                        app:checkedButton="@id/updateSourceAuto" app:selectionRequired="true" app:singleSelection="true">
+                        <com.google.android.material.button.MaterialButton android:id="@+id/updateSourceAuto"
+                            style="@style/Widget.MaterialComponents.Button.OutlinedButton" android:layout_width="0dp" android:layout_height="48dp" android:layout_weight="1"
+                            android:text="自动" android:textColor="@color/pink_dark" app:cornerRadius="14dp" app:strokeColor="@color/pink_primary" />
+                        <com.google.android.material.button.MaterialButton android:id="@+id/updateSourceGithub"
+                            style="@style/Widget.MaterialComponents.Button.OutlinedButton" android:layout_width="0dp" android:layout_height="48dp" android:layout_weight="1"
+                            android:text="GitHub" android:textColor="@color/pink_dark" app:cornerRadius="14dp" app:strokeColor="@color/pink_primary" />
+                        <com.google.android.material.button.MaterialButton android:id="@+id/updateSourceGitee"
+                            style="@style/Widget.MaterialComponents.Button.OutlinedButton" android:layout_width="0dp" android:layout_height="48dp" android:layout_weight="1"
+                            android:text="Gitee" android:textColor="@color/pink_dark" app:cornerRadius="14dp" app:strokeColor="@color/pink_primary" />
+                    </com.google.android.material.button.MaterialButtonToggleGroup>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
             <com.google.android.material.card.MaterialCardView android:id="@+id/manualUpdate"
                 android:layout_width="match_parent" android:layout_height="64dp" android:layout_marginTop="10dp"
                 android:clickable="true" android:focusable="true" android:foreground="?attr/selectableItemBackground"
@@ -177,7 +201,7 @@
                         <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
                             android:text="检查更新" android:textColor="@color/text_primary" android:textSize="15sp" android:textStyle="bold" />
                         <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="3dp"
-                            android:text="从 GitHub 下载最新正式版本" android:textColor="@color/text_secondary" android:textSize="11sp" />
+                            android:text="按所选来源检查并下载最新正式版本" android:textColor="@color/text_secondary" android:textSize="11sp" />
                     </LinearLayout>
                     <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="立即检查  ›"
                         android:textColor="@color/pink_dark" android:textSize="12sp" />
