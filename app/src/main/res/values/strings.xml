@@ -1,4 +1,4 @@
 <resources>
-    <string name="app_name">自动记账</string>
+    <string name="app_name">Accounts</string>
     <string name="accessibility_description">仅在受支持支付应用的支付成功页面读取商户、金额和时间，并保存到本机。</string>
 </resources>
