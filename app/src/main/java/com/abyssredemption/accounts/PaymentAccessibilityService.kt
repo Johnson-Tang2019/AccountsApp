@@ -45,6 +45,7 @@ class PaymentAccessibilityService : AccessibilityService() {
     )
     private val resultPageWords = listOf("返回商家", "完成", "支付详情", "查看订单", "订单详情")
     private val historyPageWords = listOf("交易记录", "账单历史", "全部订单", "订单列表")
+    private val prePaymentWords = listOf("确认付款", "立即付款", "输入支付密码", "使用密码", "确认支付")
     private val amountRegex = Regex("(?:[¥￥]\\s*|金额[：:]?\\s*)([0-9][0-9,]*(?:\\.[0-9]{1,2})?)")
     private val handler = Handler(Looper.getMainLooper())
     private var pendingPackage: String? = null
@@ -56,7 +57,10 @@ class PaymentAccessibilityService : AccessibilityService() {
     private var pendingWechatUntil = 0L
     private var screenReceiverRegistered = false
     private val unreadableCounts = mutableMapOf<String, Int>()
-    private var lastUnreadableAlertAt = 0L
+    private val unreadableFirstAt = mutableMapOf<String, Long>()
+    private val paymentContextStartedAt = mutableMapOf<String, Long>()
+    private val paymentContextUntil = mutableMapOf<String, Long>()
+    private val alertedPaymentContext = mutableMapOf<String, Long>()
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
@@ -101,8 +105,13 @@ class PaymentAccessibilityService : AccessibilityService() {
             event.eventType != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED &&
             event.eventType != AccessibilityEvent.TYPE_VIEW_SCROLLED) return
 
+        val eventText = event.text.joinToString(" ")
+        if (amountRegex.containsMatchIn(eventText) &&
+            (prePaymentWords.any(eventText::contains) || successWords.any(eventText::contains))) {
+            markPaymentContext(pkg)
+        }
+
         if (pkg !in allowedPackages) {
-            val eventText = event.text.joinToString(" ")
             val eventLooksLikeResult = successWords.any(eventText::contains) || resultPageWords.any(eventText::contains)
             if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED || eventLooksLikeResult) {
                 inspectThirdPartyPaymentWindow(pkg)
@@ -155,17 +164,23 @@ class PaymentAccessibilityService : AccessibilityService() {
         val sourceLabel = allowedPackages[expectedPackage] ?: "第三方支付"
         val root = rootInActiveWindow ?: run {
             RecognitionLogger.log(this, "no_root_$expectedPackage", "排除：${sourceLabel}活动窗口内容不可读取，可能是安全窗口或页面尚未完成加载")
-            val failures = (unreadableCounts[expectedPackage] ?: 0) + 1
-            unreadableCounts[expectedPackage] = failures
             val now = System.currentTimeMillis()
-            if (failures >= 3 && now - lastUnreadableAlertAt >= 60_000) {
-                lastUnreadableAlertAt = now
-                PaymentNotifications.screenUnreadable(this, sourceLabel)
-                RecognitionLogger.log(this, "screen_unreadable_alert_$expectedPackage", "提醒：连续无法读取${sourceLabel}页面，已发送系统通知", 0)
+            val contextStart = paymentContextStartedAt[expectedPackage]
+            if (contextStart != null && now <= (paymentContextUntil[expectedPackage] ?: 0L)) {
+                val failures = (unreadableCounts[expectedPackage] ?: 0) + 1
+                unreadableCounts[expectedPackage] = failures
+                val firstFailure = unreadableFirstAt.getOrPut(expectedPackage) { now }
+                if (failures >= 3 && now - firstFailure >= 1_500 && alertedPaymentContext[expectedPackage] != contextStart) {
+                    alertedPaymentContext[expectedPackage] = contextStart
+                    PaymentNotifications.screenUnreadable(this, sourceLabel)
+                    RecognitionLogger.log(this, "screen_unreadable_alert_$expectedPackage", "提醒：付款过程中持续无法读取${sourceLabel}页面，已发送一次系统通知", 0)
+                }
+            } else {
+                clearUnreadableFailures(expectedPackage)
             }
             return
         }
-        unreadableCounts[expectedPackage] = 0
+        clearUnreadableFailures(expectedPackage)
         val actualPackage = root.packageName?.toString() ?: run {
             RecognitionLogger.log(this, "no_package_$expectedPackage", "排除：窗口没有提供应用包名")
             return
@@ -184,8 +199,8 @@ class PaymentAccessibilityService : AccessibilityService() {
             else -> "第三方支付"
         }
         val hasSuccessText = successWords.any(page::contains)
-        val prePaymentWords = listOf("确认付款", "立即付款", "输入支付密码", "使用密码", "确认支付")
         val isPrePaymentPage = prePaymentWords.any(page::contains)
+        if (visibleAmount != null && (isPrePaymentPage || hasSuccessText)) markPaymentContext(actualPackage, now = System.currentTimeMillis())
         val isWechatBrowsePage = actualPackage == "com.tencent.mm" && listOf(
             "通讯录", "发现", "朋友圈", "我的账单", "支付服务", "摇优惠"
         ).any(page::contains)
@@ -251,6 +266,7 @@ class PaymentAccessibilityService : AccessibilityService() {
         val database = AccountDb(applicationContext)
         if (database.hasRecentPayment(amount.toDouble(), now - 60_000)) {
             RecognitionLogger.log(this, "recent_duplicate_${sourceName}_$amount", "排除：60 秒内已有相同金额的记录，避免屏幕和消息重复记账", 0)
+            clearPaymentContext(actualPackage)
             return
         }
         val previous = database.recent().firstOrNull()
@@ -279,6 +295,27 @@ class PaymentAccessibilityService : AccessibilityService() {
             RecognitionLogger.log(this, "duplicate_$fingerprint", "排除：该支付记录已存在，未重复记账", 0)
             clearPendingWechatPayment()
         }
+        clearPaymentContext(actualPackage)
+    }
+
+    private fun markPaymentContext(packageName: String, now: Long = System.currentTimeMillis()) {
+        if (now > (paymentContextUntil[packageName] ?: 0L)) {
+            paymentContextStartedAt[packageName] = now
+            alertedPaymentContext.remove(packageName)
+        }
+        paymentContextUntil[packageName] = now + 30_000
+    }
+
+    private fun clearUnreadableFailures(packageName: String) {
+        unreadableCounts.remove(packageName)
+        unreadableFirstAt.remove(packageName)
+    }
+
+    private fun clearPaymentContext(packageName: String) {
+        paymentContextStartedAt.remove(packageName)
+        paymentContextUntil.remove(packageName)
+        alertedPaymentContext.remove(packageName)
+        clearUnreadableFailures(packageName)
     }
 
     private fun clearPendingWechatPayment() {
