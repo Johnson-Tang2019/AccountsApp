@@ -59,6 +59,8 @@ class SettingsActivity : AppCompatActivity() {
                 .putFloat("monthly_budget", config.monthlyBudget)
                 .putFloat("current_balance", config.currentBalance)
                 .putLong("balance_as_of", System.currentTimeMillis())
+                .putFloat("manual_balance_snapshot", config.currentBalance)
+                .putLong("manual_balance_snapshot_at", System.currentTimeMillis())
                 .putInt("remaining_ratio", config.remainingRatio)
                 .putBoolean("overlay_visible_enabled", config.overlayVisible)
                 .putBoolean("overlay_animation_enabled", config.overlayAnimation)
@@ -220,6 +222,28 @@ class SettingsActivity : AppCompatActivity() {
             balanceInput.requestFocus()
             return false
         }
+        val now = System.currentTimeMillis()
+        val previousSnapshotAt = prefs.getLong("manual_balance_snapshot_at", prefs.getLong("balance_as_of", now))
+        val previousSnapshotBalance = prefs.getFloat(
+            "manual_balance_snapshot",
+            prefs.getFloat("current_balance", balanceValue)
+        ).toDouble()
+        var adjustment = 0.0
+        if (!isSameLocalDay(previousSnapshotAt, now)) {
+            val database = AccountDb(this)
+            val recordedNetChange = database.netChangeSince(previousSnapshotAt)
+            adjustment = BalanceReconciliation.missingExpense(
+                previousSnapshotBalance,
+                recordedNetChange,
+                balanceValue.toDouble()
+            )
+            if (adjustment > 0.0) {
+                val note = "每日余额校准：上次 ¥${java.text.DecimalFormat("0.00").format(previousSnapshotBalance)}，本次 ¥${java.text.DecimalFormat("0.00").format(balanceValue)}"
+                if (!database.insertManual("余额差额", adjustment, "expense", "余额校准", note)) adjustment = 0.0
+            }
+            database.close()
+        }
+        val snapshotAt = System.currentTimeMillis()
         prefs.edit()
             .putFloat("monthly_budget", budgetValue)
             .putInt("remaining_ratio", state.ratio)
@@ -229,13 +253,26 @@ class SettingsActivity : AppCompatActivity() {
             .putBoolean("message_recognition_enabled", state.message)
             .putString("update_source", state.updateSource)
             .putFloat("current_balance", balanceValue)
-            .putLong("balance_as_of", System.currentTimeMillis())
+            .putLong("balance_as_of", snapshotAt)
+            .putFloat("manual_balance_snapshot", balanceValue)
+            .putLong("manual_balance_snapshot_at", snapshotAt)
             .apply()
         sendBroadcast(Intent(PaymentAccessibilityService.ACTION_SETTINGS_CHANGED).setPackage(packageName))
         initialState = state
-        Toast.makeText(this, "设置已保存", Toast.LENGTH_SHORT).show()
+        val message = if (adjustment > 0.0) {
+            "设置已保存，并记录余额差额支出 ¥${java.text.DecimalFormat("0.00").format(adjustment)}"
+        } else "设置已保存"
+        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
         finish()
         return true
+    }
+
+    private fun isSameLocalDay(first: Long, second: Long): Boolean {
+        val a = java.util.Calendar.getInstance().apply { timeInMillis = first }
+        val b = java.util.Calendar.getInstance().apply { timeInMillis = second }
+        return a.get(java.util.Calendar.ERA) == b.get(java.util.Calendar.ERA) &&
+            a.get(java.util.Calendar.YEAR) == b.get(java.util.Calendar.YEAR) &&
+            a.get(java.util.Calendar.DAY_OF_YEAR) == b.get(java.util.Calendar.DAY_OF_YEAR)
     }
 
     private fun requestExit() {

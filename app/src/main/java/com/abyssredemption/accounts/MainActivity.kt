@@ -179,7 +179,7 @@ class MainActivity : AppCompatActivity() {
         merchant.setText(record?.merchant.orEmpty())
         if (record != null) amount.setText(money.format(record.amount))
         kinds.check(if (record?.kind == "income") R.id.recordIncome else R.id.recordExpense)
-        val categoryValues = listOf("餐饮", "购物", "交通", "居住", "娱乐", "医疗", "工资", "红包", "自动记账", "其他")
+        val categoryValues = listOf("餐饮", "购物", "交通", "居住", "娱乐", "医疗", "工资", "红包", "自动记账", "余额校准", "其他")
         categories.setAdapter(ArrayAdapter(this, android.R.layout.simple_dropdown_item_1line, categoryValues))
         categories.setText(record?.category?.takeIf(categoryValues::contains) ?: "其他", false)
         note.setText(record?.note.orEmpty())

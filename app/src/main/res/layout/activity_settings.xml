@@ -34,6 +34,9 @@
                     <EditText android:id="@+id/settingBalance" android:layout_width="match_parent" android:layout_height="52dp"
                         android:layout_marginTop="4dp" android:backgroundTint="@color/pink_primary" android:hint="0"
                         android:inputType="numberDecimal|numberSigned" android:textColor="@color/text_primary" android:textSize="20sp" />
+                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp"
+                        android:text="跨天保存余额时，未被现有账单解释的下降差额会自动记为支出。"
+                        android:textColor="@color/text_secondary" android:textSize="11sp" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
