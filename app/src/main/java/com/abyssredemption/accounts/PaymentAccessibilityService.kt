@@ -46,6 +46,7 @@ class PaymentAccessibilityService : AccessibilityService() {
     private val resultPageWords = listOf("返回商家", "完成", "支付详情", "查看订单", "订单详情")
     private val historyPageWords = listOf("交易记录", "账单历史", "全部订单", "订单列表")
     private val prePaymentWords = listOf("确认付款", "立即付款", "输入支付密码", "使用密码", "确认支付")
+    private val appLockWords = listOf("应用锁", "验证应用锁", "请输入应用锁密码", "验证指纹", "隐私密码")
     private val amountRegex = Regex("(?:[¥￥]\\s*|金额[：:]?\\s*)([0-9][0-9,]*(?:\\.[0-9]{1,2})?)")
     private val handler = Handler(Looper.getMainLooper())
     private var pendingPackage: String? = null
@@ -56,11 +57,11 @@ class PaymentAccessibilityService : AccessibilityService() {
     private var pendingWechatMerchant: String? = null
     private var pendingWechatUntil = 0L
     private var screenReceiverRegistered = false
-    private val unreadableCounts = mutableMapOf<String, Int>()
-    private val unreadableFirstAt = mutableMapOf<String, Long>()
     private val paymentContextStartedAt = mutableMapOf<String, Long>()
     private val paymentContextUntil = mutableMapOf<String, Long>()
     private val alertedPaymentContext = mutableMapOf<String, Long>()
+    private val scheduledUnreadableContext = mutableMapOf<String, Long>()
+    private var lastWindowPackage: String? = null
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
@@ -104,6 +105,7 @@ class PaymentAccessibilityService : AccessibilityService() {
         if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
             event.eventType != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED &&
             event.eventType != AccessibilityEvent.TYPE_VIEW_SCROLLED) return
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) lastWindowPackage = pkg
 
         val eventText = event.text.joinToString(" ")
         if (amountRegex.containsMatchIn(eventText) &&
@@ -166,14 +168,10 @@ class PaymentAccessibilityService : AccessibilityService() {
             RecognitionLogger.log(this, "no_root_$expectedPackage", "排除：${sourceLabel}活动窗口内容不可读取，可能是安全窗口或页面尚未完成加载")
             val now = System.currentTimeMillis()
             val contextStart = paymentContextStartedAt[expectedPackage]
-            if (contextStart != null && now <= (paymentContextUntil[expectedPackage] ?: 0L)) {
-                val failures = (unreadableCounts[expectedPackage] ?: 0) + 1
-                unreadableCounts[expectedPackage] = failures
-                val firstFailure = unreadableFirstAt.getOrPut(expectedPackage) { now }
-                if (failures >= 3 && now - firstFailure >= 1_500 && alertedPaymentContext[expectedPackage] != contextStart) {
-                    alertedPaymentContext[expectedPackage] = contextStart
-                    PaymentNotifications.screenUnreadable(this, sourceLabel)
-                    RecognitionLogger.log(this, "screen_unreadable_alert_$expectedPackage", "提醒：付款过程中持续无法读取${sourceLabel}页面，已发送一次系统通知", 0)
+            if (contextStart != null && now <= (paymentContextUntil[expectedPackage] ?: 0L) && lastWindowPackage == expectedPackage) {
+                if (scheduledUnreadableContext[expectedPackage] != contextStart) {
+                    scheduledUnreadableContext[expectedPackage] = contextStart
+                    handler.postDelayed({ verifyLongUnreadable(expectedPackage, sourceLabel, contextStart) }, 10_000)
                 }
             } else {
                 clearUnreadableFailures(expectedPackage)
@@ -192,6 +190,12 @@ class PaymentAccessibilityService : AccessibilityService() {
         val texts = mutableListOf<String>()
         collectVisibleText(root, texts)
         val page = texts.joinToString(" ")
+        if (appLockWords.any(page::contains)) {
+            RecognitionLogger.log(this, "app_lock_$actualPackage", "忽略：检测到${sourceLabel}应用锁页面，不发送读取失败提醒", 0)
+            clearPaymentContext(actualPackage)
+            clearPendingWechatPayment()
+            return
+        }
         val visibleAmount = findAmount(texts, page)
         val sourceName = allowedPackages[actualPackage] ?: when {
             page.contains("微信支付") -> "微信"
@@ -306,9 +310,31 @@ class PaymentAccessibilityService : AccessibilityService() {
         paymentContextUntil[packageName] = now + 30_000
     }
 
+    private fun verifyLongUnreadable(packageName: String, sourceLabel: String, contextStart: Long) {
+        if (scheduledUnreadableContext.remove(packageName) != contextStart) return
+        val now = System.currentTimeMillis()
+        if (paymentContextStartedAt[packageName] != contextStart || now > (paymentContextUntil[packageName] ?: 0L)) return
+        if (lastWindowPackage != packageName || alertedPaymentContext[packageName] == contextStart) return
+        val root = rootInActiveWindow
+        if (root != null) {
+            if (root.packageName?.toString() != packageName) return
+            val texts = mutableListOf<String>()
+            collectVisibleText(root, texts)
+            val page = texts.joinToString(" ")
+            if (appLockWords.any(page::contains)) {
+                RecognitionLogger.log(this, "app_lock_delayed_$packageName", "忽略：长时检查确认当前为${sourceLabel}应用锁页面", 0)
+                clearPaymentContext(packageName)
+                return
+            }
+            if (texts.isNotEmpty()) return
+        }
+        alertedPaymentContext[packageName] = contextStart
+        PaymentNotifications.screenUnreadable(this, sourceLabel)
+        RecognitionLogger.log(this, "screen_unreadable_alert_$packageName", "提醒：付款过程中持续 10 秒无法读取${sourceLabel}页面，已发送一次系统通知", 0)
+    }
+
     private fun clearUnreadableFailures(packageName: String) {
-        unreadableCounts.remove(packageName)
-        unreadableFirstAt.remove(packageName)
+        scheduledUnreadableContext.remove(packageName)
     }
 
     private fun clearPaymentContext(packageName: String) {
