@@ -22,9 +22,12 @@ class MainActivity : AppCompatActivity() {
     private val prefs by lazy { getSharedPreferences("budget_settings", MODE_PRIVATE) }
     private var filter: String? = null
     private val money = java.text.DecimalFormat("0.00")
+    private var accessibilityPromptShown = false
+    private var waitingForNotificationPermission = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        accessibilityPromptShown = savedInstanceState?.getBoolean("accessibility_prompt_shown", false) ?: false
         WindowCompat.setDecorFitsSystemWindows(window, false)
         setContentView(R.layout.activity_main)
         applyTopInset(findViewById(R.id.mainHeader))
@@ -46,8 +49,22 @@ class MainActivity : AppCompatActivity() {
 
     private fun requestNotificationPermissionIfNeeded() {
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            waitingForNotificationPermission = true
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1001)
         }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 1001) {
+            waitingForNotificationPermission = false
+            showAccessibilityReminderIfNeeded()
+        }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean("accessibility_prompt_shown", accessibilityPromptShown)
+        super.onSaveInstanceState(outState)
     }
 
     private fun applyTopInset(header: View) {
@@ -60,7 +77,11 @@ class MainActivity : AppCompatActivity() {
         ViewCompat.requestApplyInsets(header)
     }
 
-    override fun onResume() { super.onResume(); refresh() }
+    override fun onResume() {
+        super.onResume()
+        refresh()
+        if (!waitingForNotificationPermission) showAccessibilityReminderIfNeeded()
+    }
 
     private fun refresh() {
         updateFilterSelection()
@@ -109,6 +130,7 @@ class MainActivity : AppCompatActivity() {
             else -> "未开启，点击授权"
         }
         findViewById<TextView>(R.id.autoDot).setTextColor(Color.parseColor(if (heartbeatFresh) "#4FAE82" else "#C9A6AE"))
+        findViewById<View>(R.id.checkAccessibility).visibility = if (enabled) View.GONE else View.VISIBLE
 
         val rows = db.recent(filter)
         findViewById<TextView>(R.id.emptyView).visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
@@ -122,6 +144,18 @@ class MainActivity : AppCompatActivity() {
             PinkDialogs.show(deleteDialog)
             true
         }
+    }
+
+    private fun showAccessibilityReminderIfNeeded() {
+        if (accessibilityPromptShown || AccessibilityStatus.isServiceEnabled(this) || isFinishing || isDestroyed) return
+        accessibilityPromptShown = true
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("开启无障碍自动记账")
+            .setMessage("Accounts 尚未获得无障碍权限，无法读取支付成功页面并自动记账。你可以现在开启，或稍后从主界面的“检测”按钮进入设置。")
+            .setNegativeButton("稍后", null)
+            .setPositiveButton("去开启") { _, _ -> startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+            .create()
+        PinkDialogs.show(dialog)
     }
 
     private fun updateFilterSelection() {
