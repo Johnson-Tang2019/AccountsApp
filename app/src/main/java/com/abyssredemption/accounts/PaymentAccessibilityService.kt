@@ -27,7 +27,6 @@ import android.widget.ImageView
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.core.content.ContextCompat
-import java.security.MessageDigest
 import kotlin.math.abs
 
 class PaymentAccessibilityService : AccessibilityService() {
@@ -47,12 +46,16 @@ class PaymentAccessibilityService : AccessibilityService() {
     private val historyPageWords = listOf("交易记录", "账单历史", "全部订单", "订单列表")
     private val prePaymentWords = listOf("确认付款", "立即付款", "输入支付密码", "使用密码", "确认支付")
     private val appLockWords = listOf("应用锁", "验证应用锁", "请输入应用锁密码", "验证指纹", "隐私密码")
-    private val amountRegex = Regex("(?:[¥￥]\\s*|金额[：:]?\\s*)([0-9][0-9,]*(?:\\.[0-9]{1,2})?)")
+    private data class ScreenObservation(
+        val source: String, val amount: Double, val merchant: String, val fingerprint: String,
+        val firstSeen: Long, var lastSeenElapsed: Long
+    )
+    private val previousScreens = mutableMapOf<String, ScreenObservation>()
     private val handler = Handler(Looper.getMainLooper())
     private var pendingPackage: String? = null
     private val parseTask = Runnable { pendingPackage?.let(::parseCurrentWindow) }
     private var overlayView: ImageView? = null
-    private var confirmationPendingUntil = 0L
+    private var lastConfirmationFingerprint: String? = null
     private var pendingWechatAmount: String? = null
     private var pendingWechatMerchant: String? = null
     private var pendingWechatUntil = 0L
@@ -76,7 +79,10 @@ class PaymentAccessibilityService : AccessibilityService() {
                         intent.getStringExtra("amount") ?: "0.00"
                     )
                 }
-                ACTION_MESSAGE_PAYMENT_RECORDED -> animateOverlaySuccess()
+                ACTION_MESSAGE_PAYMENT_RECORDED -> {
+                    intent.getStringExtra("observedPackage")?.let(::clearPaymentContext)
+                    animateOverlaySuccess()
+                }
             }
         }
     }
@@ -106,14 +112,19 @@ class PaymentAccessibilityService : AccessibilityService() {
             event.eventType != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED &&
             event.eventType != AccessibilityEvent.TYPE_VIEW_SCROLLED) return
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) lastWindowPackage = pkg
+        if (pkg == packageName) return
 
         val eventText = event.text.joinToString(" ")
-        if (amountRegex.containsMatchIn(eventText) &&
+        if (pkg in allowedPackages && PaymentEvidence.amount(eventText) != null &&
             (prePaymentWords.any(eventText::contains) || successWords.any(eventText::contains))) {
             markPaymentContext(pkg)
         }
 
         if (pkg !in allowedPackages) {
+            if (RecognitionRules.load(this).hasRulesFor("screen", pkg)) {
+                parseCurrentWindow(pkg)
+                return
+            }
             val eventLooksLikeResult = successWords.any(eventText::contains) || resultPageWords.any(eventText::contains)
             if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED || eventLooksLikeResult) {
                 inspectThirdPartyPaymentWindow(pkg)
@@ -147,15 +158,15 @@ class PaymentAccessibilityService : AccessibilityService() {
         collectVisibleText(root, texts)
         if (texts.isEmpty()) return
         val page = texts.joinToString(" ")
-        val hasSuccess = successWords.any(page::contains)
-        val hasResultAction = resultPageWords.any(page::contains)
+        val hasSuccess = texts.any { PaymentEvidence.startsWithMarker(it, successWords) }
+        val hasResultAction = resultPageWords.any(texts::contains)
         val hasHistoryMarker = historyPageWords.any(page::contains)
         val amount = findAmount(texts, page)
         if (hasSuccess && hasResultAction && !hasHistoryMarker && amount != null) {
             RecognitionLogger.log(
                 this,
                 "third_party_candidate_$expectedPackage",
-                "发现第三方支付结果页：包名=$expectedPackage，节点=${texts.size}，金额=¥$amount",
+                "发现第三方支付结果页：包名=$expectedPackage，节点=${texts.size}",
                 0
             )
             parseCurrentWindow(expectedPackage)
@@ -165,6 +176,7 @@ class PaymentAccessibilityService : AccessibilityService() {
     private fun parseCurrentWindow(expectedPackage: String) {
         val sourceLabel = allowedPackages[expectedPackage] ?: "第三方支付"
         val root = rootInActiveWindow ?: run {
+            RecognitionLogger.event(this, "screen", "window_unavailable", expectedPackage, throttleMs = 1500)
             RecognitionLogger.log(this, "no_root_$expectedPackage", "排除：${sourceLabel}活动窗口内容不可读取，可能是安全窗口或页面尚未完成加载")
             val now = System.currentTimeMillis()
             val contextStart = paymentContextStartedAt[expectedPackage]
@@ -191,6 +203,8 @@ class PaymentAccessibilityService : AccessibilityService() {
         collectVisibleText(root, texts)
         val page = texts.joinToString(" ")
         if (appLockWords.any(page::contains)) {
+            RecognitionLogger.event(this, "screen", "app_lock", actualPackage,
+                mapOf("appLock" to true, "windowId" to root.windowId), 1500)
             RecognitionLogger.log(this, "app_lock_$actualPackage", "忽略：检测到${sourceLabel}应用锁页面，不发送读取失败提醒", 0)
             clearPaymentContext(actualPackage)
             clearPendingWechatPayment()
@@ -202,104 +216,107 @@ class PaymentAccessibilityService : AccessibilityService() {
             page.contains("支付宝") -> "支付宝"
             else -> "第三方支付"
         }
-        val hasSuccessText = successWords.any(page::contains)
+        val hasSuccessText = texts.any { PaymentEvidence.startsWithMarker(it, successWords) }
         val isPrePaymentPage = prePaymentWords.any(page::contains)
         if (visibleAmount != null && (isPrePaymentPage || hasSuccessText)) markPaymentContext(actualPackage, now = System.currentTimeMillis())
-        val isWechatBrowsePage = actualPackage == "com.tencent.mm" && listOf(
-            "通讯录", "发现", "朋友圈", "我的账单", "支付服务", "摇优惠"
-        ).any(page::contains)
-        val isWechatConfirmedPayment = actualPackage == "com.tencent.mm" &&
-            page.contains("微信支付") &&
-            (page.contains("微信红包") || page.contains("转账") || page.contains("收付款"))
-        val isWechatSuccessPage = actualPackage == "com.tencent.mm" && hasSuccessText &&
-            (page.contains("微信支付") || page.contains("微信红包") || page.contains("转账") || page.contains("收付款"))
-        // 微信新版紧凑结果页不再显示“微信支付”字样，只保留状态、商户、金额和“返回商家”。
-        val isWechatCompactSuccessPage = actualPackage == "com.tencent.mm" &&
-            hasSuccessText && visibleAmount != null && resultPageWords.any(page::contains) &&
-            historyPageWords.none(page::contains)
+        val resultAction = resultPageWords.any { word -> texts.any { it == word } }
+        val historyPage = historyPageWords.any { word -> texts.any { it == word } } ||
+            (actualPackage == "com.tencent.mm" &&
+                (texts.any { it == "我的账单" || it == "支付服务" || it == "账单详情" } ||
+                    (texts.contains("通讯录") && texts.contains("发现"))))
+        val isWechatResult = actualPackage == "com.tencent.mm" && hasSuccessText &&
+            (resultAction || listOf("微信支付", "微信红包", "转账", "收付款").any(page::contains) || visibleAmount != null)
         val now = System.currentTimeMillis()
         val hasRecentWechatPaymentCandidate = actualPackage == "com.tencent.mm" &&
             pendingWechatAmount != null &&
             now <= pendingWechatUntil
-        val isWechatFastResultPage = hasRecentWechatPaymentCandidate &&
+        val isWechatFastResultPage = hasRecentWechatPaymentCandidate && hasSuccessText &&
             page.contains("微信支付") &&
             !isPrePaymentPage
-        if (isWechatBrowsePage) {
+        if (historyPage) {
+            previousScreens.remove(actualPackage)
+            clearPendingWechatPayment()
+            RecognitionLogger.event(this, "screen", "history_page", actualPackage,
+                mapOf("historyPage" to true, "windowId" to root.windowId), 1500)
             RecognitionLogger.log(this, "wechat_browse_page", "排除：当前是微信聊天列表或支付账单历史，不是新的支付结果页")
             return
         }
-        if (isPrePaymentPage && !isWechatConfirmedPayment) {
+        if (isPrePaymentPage) {
+            previousScreens.remove(actualPackage)
+            RecognitionLogger.event(this, "screen", "pre_payment", actualPackage,
+                mapOf("prePayment" to true, "amountPresent" to (visibleAmount != null), "windowId" to root.windowId), 1500)
             if (actualPackage == "com.tencent.mm") {
                 findAmount(texts, page)?.let { amount ->
                     pendingWechatAmount = amount
                     pendingWechatMerchant = findMerchant(texts)
                     pendingWechatUntil = now + 12_000
-                    RecognitionLogger.log(this, "wechat_pending_amount", "暂存：检测到微信付款确认金额 ¥$amount，等待支付结果页", 0)
                 }
             }
             RecognitionLogger.log(this, "pre_payment_$actualPackage", "排除：检测到付款确认控件，尚未进入支付成功阶段")
             return
         }
-        val accepted = if (actualPackage == "com.tencent.mm") {
-            isWechatConfirmedPayment || isWechatSuccessPage || isWechatCompactSuccessPage || isWechatFastResultPage
+        val rule = RecognitionRules.load(this).evaluate("screen", actualPackage, texts)
+        val builtInAccepted = if (actualPackage == "com.tencent.mm") {
+            isWechatResult || isWechatFastResultPage
         } else if (actualPackage !in allowedPackages) {
-            hasSuccessText && resultPageWords.any(page::contains) && historyPageWords.none(page::contains)
+            hasSuccessText && resultAction
         } else {
             hasSuccessText
         }
+        val accepted = rule?.let { it.action == "accept" } ?: builtInAccepted
+        val evidence = mutableMapOf<String, Any>(
+            "nodeCount" to texts.size, "windowId" to root.windowId,
+            "amountPresent" to (visibleAmount != null), "successMarker" to hasSuccessText,
+            "resultAction" to resultAction
+        )
+        rule?.let { evidence["ruleId"] = it.ruleId }
         if (!accepted) {
-            val wechatPay = page.contains("微信支付")
-            val redPacket = page.contains("微信红包")
-            RecognitionLogger.log(
-                this,
-                "no_marker_$actualPackage",
-                "排除：未找到成功或已确认支付标记（节点 ${texts.size}，微信支付=$wechatPay，微信红包=$redPacket，紧凑结果页=$isWechatCompactSuccessPage）"
-            )
+            RecognitionLogger.event(this, "screen", if (rule == null) "no_success_marker" else "rule_rejected",
+                actualPackage, evidence, 1500)
             return
         }
 
-        val amount = visibleAmount ?: pendingWechatAmount?.takeIf {
+        val amount = rule?.amount ?: visibleAmount ?: pendingWechatAmount?.takeIf {
             actualPackage == "com.tencent.mm" && isWechatFastResultPage
         } ?: run {
-            RecognitionLogger.log(this, "no_amount_$actualPackage", "排除：已找到支付状态，但未读取到金额（节点 ${texts.size}）")
+            RecognitionLogger.event(this, "screen", "amount_missing", actualPackage, evidence, 1500)
             return
         }
-        val merchant = findMerchant(texts)
+        val value = amount.toDoubleOrNull()?.takeIf { it.isFinite() && it > 0 } ?: return
+        val merchant = rule?.merchant ?: findMerchant(texts)
             ?: pendingWechatMerchant?.takeIf { actualPackage == "com.tencent.mm" && isWechatFastResultPage }
             ?: "${sourceName}商户"
-        val database = AccountDb(applicationContext)
-        if (database.hasRecentPayment(amount.toDouble(), now - 60_000)) {
-            RecognitionLogger.log(this, "recent_duplicate_${sourceName}_$amount", "排除：60 秒内已有相同金额的记录，避免屏幕和消息重复记账", 0)
-            clearPaymentContext(actualPackage)
-            return
+        val elapsed = android.os.SystemClock.elapsedRealtime()
+        previousScreens.entries.removeAll { elapsed - it.value.lastSeenElapsed > 45_000 }
+        val observation = previousScreens[actualPackage]?.takeIf {
+            it.source == sourceName && it.amount == value && PaymentEvidence.sameMerchant(it.merchant, merchant, sourceName)
+        } ?: ScreenObservation(sourceName, value, merchant, java.util.UUID.randomUUID().toString(), now, elapsed)
+            .also { previousScreens[actualPackage] = it }
+        observation.lastSeenElapsed = elapsed
+        val fingerprint = observation.fingerprint
+        val result = AccountDb(this).use {
+            it.recordAutomaticPayment(merchant, value, sourceName, observation.firstSeen, "screen", fingerprint, true)
         }
-        val previous = database.recent().firstOrNull()
-        if (previous != null && kotlin.math.abs(previous.amount - amount.toDouble()) < 0.001 && now >= confirmationPendingUntil) {
-            confirmationPendingUntil = now + 15_000
-            val confirmationFingerprint = sha256("confirm|$actualPackage|$merchant|$amount|$now")
+        evidence["attemptId"] = fingerprint
+        RecognitionLogger.event(this, "screen", result.name.lowercase(), actualPackage, evidence, 1500)
+        clearPendingWechatPayment()
+        clearPaymentContext(actualPackage)
+        if (result == AutoPaymentResult.CONFIRMATION_REQUIRED && lastConfirmationFingerprint != fingerprint) {
+            lastConfirmationFingerprint = fingerprint
             startActivity(Intent(this, DuplicatePaymentActivity::class.java).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS)
                 putExtra("merchant", merchant)
                 putExtra("amount", amount)
                 putExtra("source", sourceName)
-                putExtra("paidAt", now)
-                putExtra("fingerprint", confirmationFingerprint)
+                putExtra("paidAt", observation.firstSeen)
+                putExtra("fingerprint", fingerprint)
+                putExtra("observedPackage", actualPackage)
             })
-            RecognitionLogger.log(this, "same_amount_confirmation", "提示：本次金额与上一笔相同，等待用户确认是否记录", 0)
-            return
         }
-        val fingerprint = sha256("$actualPackage|$merchant|$amount|${now / 60_000}")
-        val inserted = database.insert(merchant, amount, sourceName, now, fingerprint)
-        if (inserted) {
-            RecognitionLogger.log(this, "inserted_$fingerprint", "成功：已记录 $sourceName · $merchant · ¥$amount", 0)
-            clearPendingWechatPayment()
+        if (result == AutoPaymentResult.RECORDED) {
             animateOverlaySuccess()
             sendRecordedNotification(sourceName, merchant, amount)
-        } else {
-            RecognitionLogger.log(this, "duplicate_$fingerprint", "排除：该支付记录已存在，未重复记账", 0)
-            clearPendingWechatPayment()
         }
-        clearPaymentContext(actualPackage)
     }
 
     private fun markPaymentContext(packageName: String, now: Long = System.currentTimeMillis()) {
@@ -351,15 +368,7 @@ class PaymentAccessibilityService : AccessibilityService() {
     }
 
     private fun findAmount(texts: List<String>, page: String): String? {
-        amountRegex.find(page)?.groupValues?.get(1)?.replace(",", "")?.let { return it }
-        // 兼容“¥”与“24.88”被拆成相邻无障碍节点的页面。
-        for (i in 0 until texts.lastIndex) {
-            if (texts[i].trim() in setOf("¥", "￥")) {
-                Regex("[0-9][0-9,]*(?:\\.[0-9]{1,2})?").find(texts[i + 1])?.value
-                    ?.replace(",", "")?.let { return it }
-            }
-        }
-        return null
+        return texts.firstNotNullOfOrNull(PaymentEvidence::symbolAmount) ?: PaymentEvidence.amount(page)
     }
 
     private fun collectVisibleText(node: AccessibilityNodeInfo, out: MutableList<String>) {
@@ -394,14 +403,11 @@ class PaymentAccessibilityService : AccessibilityService() {
         if (successWords.any(value::contains)) return false
         if (value.any(Char::isDigit) || value.contains('¥') || value.contains('￥')) return false
         val excluded = listOf(
-            "回首页", "付款方式", "完成", "红包", "积分", "广告", "账单", "一键领", "去领取",
+            "回首页", "返回商家", "微信支付", "支付宝", "付款方式", "完成", "红包", "积分", "广告", "账单", "一键领", "去领取",
             "关闭", "取消", "确认付款", "立即付款", "确认支付", "使用密码", "输入支付密码"
         )
         return excluded.none(value::contains)
     }
-
-    private fun sha256(value: String) = MessageDigest.getInstance("SHA-256")
-        .digest(value.toByteArray()).joinToString("") { "%02x".format(it) }
 
     private fun sendRecordedNotification(source: String, merchant: String, amount: String) {
         if (!getSharedPreferences("budget_settings", MODE_PRIVATE).getBoolean("record_notification_enabled", true)) return

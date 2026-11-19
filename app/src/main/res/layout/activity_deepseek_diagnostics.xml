@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:background="@color/pink_canvas" android:orientation="vertical">
+
+    <LinearLayout android:id="@+id/deepSeekHeader" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:minHeight="72dp" android:background="@drawable/bg_header" android:gravity="center_vertical" android:padding="16dp">
+        <TextView android:id="@+id/deepSeekBack" android:layout_width="48dp" android:layout_height="48dp"
+            android:background="@drawable/bg_glass_button" android:gravity="center" android:text="‹" android:textSize="30sp"
+            android:contentDescription="返回" android:textColor="@color/pink_dark" />
+        <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginStart="12dp"
+            android:text="DeepSeek 诊断" android:textColor="@color/text_primary" android:textSize="22sp" android:textStyle="bold" />
+    </LinearLayout>
+
+    <ScrollView android:id="@+id/deepSeekScroll" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"
+        android:clipToPadding="false" android:padding="18dp">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
+            <TextView android:id="@+id/deepSeekRange" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:textColor="@color/text_primary" android:textSize="14sp" />
+            <com.google.android.material.button.MaterialButton android:id="@+id/previewForDshGo"
+                android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp"
+                android:minHeight="48dp" android:text="预览并交给 DSH Go" android:textAllCaps="false" app:cornerRadius="16dp" />
+
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="14dp"
+                android:background="@drawable/bg_list" android:orientation="vertical" android:padding="14dp">
+                <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:text="DeepSeek API" android:textColor="@color/text_primary" android:textSize="16sp" android:textStyle="bold" />
+                <com.google.android.material.textfield.TextInputLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp" android:hint="HTTPS 接口地址">
+                    <com.google.android.material.textfield.TextInputEditText android:id="@+id/deepSeekEndpoint"
+                        android:layout_width="match_parent" android:layout_height="wrap_content" android:inputType="textUri" android:maxLength="256" />
+                </com.google.android.material.textfield.TextInputLayout>
+                <com.google.android.material.textfield.TextInputLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp" android:hint="模型">
+                    <com.google.android.material.textfield.TextInputEditText android:id="@+id/deepSeekModel"
+                        android:layout_width="match_parent" android:layout_height="wrap_content" android:inputType="textNoSuggestions" android:maxLength="100" />
+                </com.google.android.material.textfield.TextInputLayout>
+                <com.google.android.material.textfield.TextInputLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp" android:hint="API Key（本次使用）">
+                    <com.google.android.material.textfield.TextInputEditText android:id="@+id/deepSeekKey"
+                        android:layout_width="match_parent" android:layout_height="wrap_content" android:inputType="textPassword" android:importantForAutofill="no"
+                        android:maxLength="512" android:saveEnabled="false" />
+                </com.google.android.material.textfield.TextInputLayout>
+                <com.google.android.material.button.MaterialButton android:id="@+id/previewForDeepSeekApi"
+                    android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp"
+                    android:minHeight="48dp" android:text="预览并分析" app:cornerRadius="16dp" />
+            </LinearLayout>
+
+            <ProgressBar android:id="@+id/deepSeekProgress" android:layout_width="36dp" android:layout_height="36dp"
+                android:layout_gravity="center_horizontal" android:layout_marginTop="12dp" android:visibility="gone" />
+            <TextView android:id="@+id/deepSeekStatus" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="10dp" android:accessibilityLiveRegion="polite" android:textColor="@color/text_primary" android:textSize="14sp" />
+            <TextView android:id="@+id/deepSeekOutput" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="8dp" android:background="@drawable/bg_list" android:fontFamily="monospace" android:padding="14dp"
+                android:textColor="@color/text_primary" android:textIsSelectable="true" android:saveEnabled="false" android:textSize="12sp" android:visibility="gone" />
+            <com.google.android.material.button.MaterialButton android:id="@+id/exportDeepSeekDraft"
+                android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp"
+                android:minHeight="48dp" android:text="导出规则草案" android:visibility="gone" app:cornerRadius="16dp" />
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>

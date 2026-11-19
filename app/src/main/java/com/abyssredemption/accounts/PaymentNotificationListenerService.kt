@@ -8,7 +8,7 @@ import android.content.Intent
 import android.graphics.Color
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
-import android.os.Bundle
+import androidx.core.app.NotificationCompat
 import java.security.MessageDigest
 
 class PaymentNotificationListenerService : NotificationListenerService() {
@@ -16,8 +16,7 @@ class PaymentNotificationListenerService : NotificationListenerService() {
         "com.eg.android.AlipayGphone" to "支付宝",
         "com.tencent.mm" to "微信"
     )
-    private val amountRegex = Regex("(?:[¥￥]\\s*|金额[：:]?\\s*)([0-9][0-9,]*(?:\\.[0-9]{1,2})?)|([0-9][0-9,]*(?:\\.[0-9]{1,2})?)\\s*元")
-    private val successMarkers = listOf("支付成功", "付款成功", "交易成功", "已支付", "支付凭证", "扣款成功")
+    private val successMarkers = listOf("支付成功", "付款成功", "交易成功", "已支付", "扣款成功", "支付完成")
 
     override fun onListenerConnected() {
         super.onListenerConnected()
@@ -38,7 +37,10 @@ class PaymentNotificationListenerService : NotificationListenerService() {
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         sbn ?: return
-        val source = sources[sbn.packageName] ?: return
+        val rules = RecognitionRules.load(this)
+        val builtInSource = sources[sbn.packageName]
+        if (builtInSource == null && !rules.hasRulesFor("notification", sbn.packageName)) return
+        val source = builtInSource ?: "第三方支付"
         getSharedPreferences("service_state", MODE_PRIVATE).edit()
             .putLong("last_message_event", System.currentTimeMillis())
             .putString("last_message_source", source)
@@ -48,69 +50,68 @@ class PaymentNotificationListenerService : NotificationListenerService() {
                 .getBoolean("message_recognition_enabled", true)) return
         if (sbn.notification.flags and Notification.FLAG_GROUP_SUMMARY != 0) return
         val receivedAt = System.currentTimeMillis()
-        val postedAt = sbn.postTime.takeIf { it > 0 } ?: receivedAt
-        if (receivedAt - postedAt > 120_000) {
-            RecognitionLogger.log(this, "message_stale_${sbn.key}", "消息排除：忽略两分钟前的旧支付通知", 0)
-            return
-        }
-
         val extras = sbn.notification.extras
-        val parts = buildList<String> {
-            add(extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty())
-            add(extras.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty())
-            add(extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString().orEmpty())
-            extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES)?.forEach { add(it.toString()) }
-            collectBundleText(extras, this)
-        }.map(String::trim).filter(String::isNotEmpty).distinct()
-        val message = parts.joinToString(" ")
-        if (message.isBlank()) {
-            RecognitionLogger.log(this, "message_empty_${sbn.packageName}", "消息排除：${source}通知未提供可读取文字")
+        val latestMessage = NotificationCompat.MessagingStyle
+            .extractMessagingStyleFromNotification(sbn.notification)?.messages?.maxByOrNull { it.timestamp }
+        val postedAt = latestMessage?.timestamp?.takeIf { it > 0 }
+            ?: sbn.notification.`when`.takeIf { it > 0 } ?: sbn.postTime.takeIf { it > 0 } ?: receivedAt
+        if (receivedAt - postedAt !in -10_000L..120_000L) {
+            RecognitionLogger.event(this, "notification", "stale_message", sbn.packageName, throttleMs = 1500)
             return
         }
-        if (listOf("收款到账", "到账通知", "已收款").any(message::contains)) {
-            RecognitionLogger.log(this, "message_income_${sbn.packageName}", "消息排除：检测到收款通知，暂不作为支出记账")
-            return
-        }
-        val match = amountRegex.find(message)
-        val amount = match?.groupValues?.drop(1)?.firstOrNull(String::isNotBlank)?.replace(",", "") ?: run {
-            RecognitionLogger.log(this, "message_no_amount_${sbn.packageName}", "消息排除：${source}支付通知未读取到金额")
-            return
-        }
-        val trustedPaymentAccount = message.contains("微信支付") ||
-            (source == "支付宝" && message.contains("支付宝"))
-        if (successMarkers.none(message::contains) && !trustedPaymentAccount) {
-            RecognitionLogger.log(this, "message_no_marker_${sbn.packageName}", "消息排除：${source}通知没有明确的支付凭证标记")
-            return
-        }
-        val value = amount.toDoubleOrNull()?.takeIf { it > 0.0 } ?: return
-        val now = postedAt
-        val db = AccountDb(applicationContext)
-        if (db.hasRecentPayment(value, now - 60_000)) {
-            RecognitionLogger.log(this, "message_duplicate_${source}_$amount", "消息排除：60 秒内已有相同金额的记录，避免与屏幕识别重复", 0)
-            return
-        }
-        val merchant = findMerchant(parts, source)
-        val fingerprint = sha256("notification|${sbn.packageName}|${sbn.key}|$amount|${now / 60_000}")
-        if (db.insert(merchant, amount, source, now, fingerprint)) {
-            RecognitionLogger.log(this, "message_inserted_$fingerprint", "消息成功：已记录 $source · $merchant · ¥$amount", 0)
-            PaymentNotifications.recorded(this, source, merchant, amount)
-            sendBroadcast(Intent(PaymentAccessibilityService.ACTION_MESSAGE_PAYMENT_RECORDED).setPackage(packageName))
-        }
-    }
 
-    @Suppress("DEPRECATION")
-    private fun collectBundleText(bundle: Bundle, output: MutableList<String>) {
-        bundle.keySet().forEach { key ->
-            when (val value = bundle.get(key)) {
-                is CharSequence -> output += value.toString()
-                is Bundle -> collectBundleText(value, output)
-                is Array<*> -> value.forEach { item ->
-                    when (item) {
-                        is CharSequence -> output += item.toString()
-                        is Bundle -> collectBundleText(item, output)
-                    }
-                }
-            }
+        val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty().trim()
+        val sender = latestMessage?.person?.name?.toString().orEmpty().trim()
+        val message = latestMessage?.text?.toString()
+            ?: (extras.getCharSequence(Notification.EXTRA_BIG_TEXT)
+                ?: extras.getCharSequence(Notification.EXTRA_TEXT)
+                ?: extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES)?.lastOrNull())?.toString().orEmpty()
+        val parts = listOf(title, sender, message).map(String::trim).filter(String::isNotEmpty).distinct()
+        if (message.isBlank()) {
+            RecognitionLogger.event(this, "notification", "message_empty", sbn.packageName, throttleMs = 1500)
+            return
+        }
+        if (listOf("收款到账", "到账通知", "已收款", "退款", "支付失败", "付款失败", "待支付", "请支付").any(message::contains)) {
+            RecognitionLogger.event(this, "notification", "non_expense_message", sbn.packageName, throttleMs = 1500)
+            return
+        }
+        val rule = rules.evaluate("notification", sbn.packageName, parts)
+        val hasSuccess = successMarkers.any { it in message || title == it }
+        val knownWechatSender = if (latestMessage == null) title == "微信支付" else
+            sender == "微信支付" || (sender.isEmpty() && title == "微信支付")
+        if (builtInSource == "微信" && !knownWechatSender) {
+            RecognitionLogger.event(this, "notification", "unverified_wechat_sender", sbn.packageName, throttleMs = 1500)
+            return
+        }
+        val builtInAccepted = hasSuccess && when (builtInSource) {
+            "微信" -> knownWechatSender
+            "支付宝" -> true
+            else -> false
+        }
+        val amount = rule?.amount ?: PaymentEvidence.amount(message)
+        val evidence = mutableMapOf<String, Any>("successMarker" to hasSuccess, "amountPresent" to (amount != null))
+        rule?.let { evidence["ruleId"] = it.ruleId }
+        if (!(rule?.let { it.action == "accept" } ?: builtInAccepted)) {
+            RecognitionLogger.event(this, "notification", if (rule == null) "no_payment_marker" else "rule_rejected",
+                sbn.packageName, evidence, 1500)
+            return
+        }
+        val value = amount?.toDoubleOrNull()?.takeIf { it.isFinite() && it > 0 }
+        if (value == null) {
+            RecognitionLogger.event(this, "notification", "amount_missing", sbn.packageName, evidence, 1500)
+            return
+        }
+        val merchant = rule?.merchant ?: findMerchant(listOf(title, message), source)
+        val fingerprint = sha256("notification|${sbn.packageName}|${sbn.key}|$postedAt|$value|${message.trim()}")
+        val result = AccountDb(this).use {
+            it.recordAutomaticPayment(merchant, value, source, postedAt, "notification", fingerprint)
+        }
+        evidence["attemptId"] = fingerprint
+        RecognitionLogger.event(this, "notification", result.name.lowercase(), sbn.packageName, evidence, 1500)
+        if (result == AutoPaymentResult.RECORDED) {
+            PaymentNotifications.recorded(this, source, merchant, requireNotNull(amount))
+            sendBroadcast(Intent(PaymentAccessibilityService.ACTION_MESSAGE_PAYMENT_RECORDED)
+                .setPackage(packageName).putExtra("observedPackage", sbn.packageName))
         }
     }
 
@@ -123,7 +124,7 @@ class PaymentNotificationListenerService : NotificationListenerService() {
         ).forEach { regex -> regex.find(joined)?.groupValues?.get(1)?.trim()?.let { return it } }
         return parts.firstOrNull {
             it.length in 2..40 && it != source && it !in listOf("微信支付", "支付宝") &&
-                successMarkers.none(it::contains) && amountRegex.find(it) == null
+                successMarkers.none(it::contains) && PaymentEvidence.amount(it) == null
         } ?: "${source}消息记账"
     }
 

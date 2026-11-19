@@ -19,8 +19,8 @@ android {
         applicationId = "com.abyssredemption.accounts"
         minSdk = 26
         targetSdk = 35
-        versionCode = 47
-        versionName = "1.1.1"
+        versionCode = 48
+        versionName = "1.1.2"
     }
 
     compileOptions {
@@ -59,4 +59,5 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20180813")
 }

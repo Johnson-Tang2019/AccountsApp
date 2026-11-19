@@ -174,6 +174,9 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<android.view.View>(R.id.openRecognitionLog).setOnClickListener {
             startActivity(Intent(this, RecognitionLogActivity::class.java))
         }
+        findViewById<android.view.View>(R.id.openRecognitionRules).setOnClickListener {
+            startActivity(Intent(this, RecognitionRulesActivity::class.java))
+        }
         findViewById<android.view.View>(R.id.exportXlsx).setOnClickListener {
             val name = "Accounts-${java.text.SimpleDateFormat("yyyyMMdd-HHmm", java.util.Locale.CHINA).format(java.util.Date())}.xlsx"
             exportLauncher.launch(name)

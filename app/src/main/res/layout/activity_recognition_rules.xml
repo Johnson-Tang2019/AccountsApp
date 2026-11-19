@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:background="@color/pink_canvas" android:orientation="vertical">
+
+    <LinearLayout android:id="@+id/rulesHeader" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:minHeight="72dp" android:background="@drawable/bg_header" android:gravity="center_vertical"
+        android:paddingStart="18dp" android:paddingTop="15dp" android:paddingEnd="18dp" android:paddingBottom="15dp">
+        <TextView android:id="@+id/rulesBack" android:layout_width="42dp" android:layout_height="42dp"
+            android:background="@drawable/bg_glass_button" android:gravity="center" android:text="‹"
+            android:contentDescription="返回" android:textColor="@color/pink_dark" android:textSize="30sp" />
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="14dp"
+            android:text="识别规则" android:textColor="@color/text_primary" android:textSize="22sp" android:textStyle="bold" />
+    </LinearLayout>
+
+    <ScrollView android:id="@+id/rulesScroll" android:layout_width="match_parent" android:layout_height="0dp"
+        android:layout_weight="1" android:padding="18dp" android:clipToPadding="false">
+        <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content"
+            app:cardBackgroundColor="@color/glass_white" app:cardCornerRadius="22dp" app:cardElevation="0dp"
+            app:strokeColor="@color/glass_stroke" app:strokeWidth="1dp">
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="vertical" android:padding="18dp">
+                <TextView android:id="@+id/rulesCount" android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:textColor="@color/text_primary" android:textSize="16sp" android:textStyle="bold" />
+                <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp" android:text="导出 JSON 后，可用文本编辑器或智能体新增、修改和排序规则。导入前会验证格式，确认后应用。"
+                    android:textColor="@color/text_secondary" android:textSize="13sp" />
+                <com.google.android.material.button.MaterialButton android:id="@+id/exportRecognitionRules"
+                    android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp"
+                    android:layout_marginTop="16dp" android:text="导出规则 JSON" android:textAllCaps="false"
+                    android:textColor="@color/pink_dark" app:backgroundTint="@color/glass_white"
+                    app:strokeColor="@color/pink_line" app:strokeWidth="1dp" app:cornerRadius="16dp" />
+                <com.google.android.material.button.MaterialButton android:id="@+id/importRecognitionRules"
+                    android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp"
+                    android:layout_marginTop="4dp" android:text="导入规则 JSON" android:textAllCaps="false"
+                    android:textColor="@color/white" app:backgroundTint="@color/pink_primary" app:cornerRadius="16dp" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+    </ScrollView>
+</LinearLayout>

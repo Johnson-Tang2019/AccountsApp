@@ -22,7 +22,9 @@ data class MonthSummary(val income: Double, val expense: Double)
 data class BudgetStats(val monthRemaining: Double, val accumulatedRemaining: Double)
 data class DailyAmount(val dayKey: String, val income: Double, val expense: Double)
 
-class AccountDb(context: Context) : SQLiteOpenHelper(context, "accounts.db", null, 2) {
+enum class AutoPaymentResult { RECORDED, REPLAY, CROSS_CHANNEL_DUPLICATE, CONFIRMATION_REQUIRED }
+
+class AccountDb(context: Context) : SQLiteOpenHelper(context, "accounts.db", null, 3) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""CREATE TABLE payments(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -35,6 +37,7 @@ class AccountDb(context: Context) : SQLiteOpenHelper(context, "accounts.db", nul
             category TEXT NOT NULL DEFAULT '其他',
             note TEXT NOT NULL DEFAULT ''
         )""")
+        createRecognitionTables(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -43,11 +46,92 @@ class AccountDb(context: Context) : SQLiteOpenHelper(context, "accounts.db", nul
             db.execSQL("ALTER TABLE payments ADD COLUMN category TEXT NOT NULL DEFAULT '其他'")
             db.execSQL("ALTER TABLE payments ADD COLUMN note TEXT NOT NULL DEFAULT ''")
         }
+        if (oldVersion < 3) createRecognitionTables(db)
     }
 
-    fun insert(merchant: String, amount: String, source: String, paidAt: Long, fingerprint: String): Boolean {
-        val value = amount.toDoubleOrNull() ?: return false
-        return insertRecord(merchant, value, source, paidAt, "expense", "自动记账", "", fingerprint)
+    private fun createRecognitionTables(db: SQLiteDatabase) {
+        db.execSQL("""
+            CREATE TABLE recognition_observations (
+                fingerprint TEXT PRIMARY KEY NOT NULL,
+                channel TEXT NOT NULL,
+                observed_at INTEGER NOT NULL,
+                paired INTEGER NOT NULL DEFAULT 0
+            )
+        """.trimIndent())
+        db.execSQL("CREATE INDEX recognition_observations_time ON recognition_observations(observed_at)")
+    }
+
+    fun recordAutomaticPayment(
+        merchant: String, amount: Double, source: String, paidAt: Long,
+        channel: String, fingerprint: String, confirmSameAmount: Boolean = false
+    ): AutoPaymentResult {
+        require(amount.isFinite() && amount > 0)
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            val result = when {
+                db.rawQuery(
+                    "SELECT 1 FROM recognition_observations WHERE fingerprint=?",
+                    arrayOf(fingerprint)
+                ).use { it.moveToFirst() } -> AutoPaymentResult.REPLAY
+                else -> {
+                    val other = findCrossChannelMatch(db, source, merchant, amount, paidAt, channel)
+                    if (other != null) {
+                        db.execSQL("UPDATE recognition_observations SET paired=1 WHERE fingerprint=?", arrayOf(other))
+                        rememberObservation(db, fingerprint, channel, paidAt, paired = true)
+                        AutoPaymentResult.CROSS_CHANNEL_DUPLICATE
+                    } else if (confirmSameAmount && latestExpenseHasAmount(db, amount)) {
+                        AutoPaymentResult.CONFIRMATION_REQUIRED
+                    } else if (insertRecord(merchant, amount, source, paidAt, "expense", "自动记账", "", fingerprint)) {
+                        rememberObservation(db, fingerprint, channel, paidAt, paired = false)
+                        AutoPaymentResult.RECORDED
+                    } else {
+                        AutoPaymentResult.REPLAY
+                    }
+                }
+            }
+            db.setTransactionSuccessful()
+            return result
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    private fun rememberObservation(db: SQLiteDatabase, fingerprint: String, channel: String, paidAt: Long, paired: Boolean) {
+        db.execSQL(
+            "INSERT INTO recognition_observations(fingerprint,channel,observed_at,paired) VALUES(?,?,?,?)",
+            arrayOf(fingerprint, channel, paidAt, if (paired) 1 else 0)
+        )
+    }
+
+    private fun latestExpenseHasAmount(db: SQLiteDatabase, amount: Double): Boolean =
+        db.rawQuery("SELECT amount FROM payments WHERE kind='expense' ORDER BY paid_at DESC, id DESC LIMIT 1", null)
+            .use { it.moveToFirst() && kotlin.math.abs(it.getDouble(0) - amount) < 0.001 }
+
+    private fun findCrossChannelMatch(
+        db: SQLiteDatabase, source: String, merchant: String, amount: Double, paidAt: Long, channel: String
+    ): String? {
+        data class Match(val fingerprint: String, val merchant: String, val distanceMs: Long)
+        val matches = mutableListOf<Match>()
+        db.rawQuery(
+            """
+            SELECT p.fingerprint,p.merchant,o.observed_at
+            FROM payments p JOIN recognition_observations o ON o.fingerprint=p.fingerprint
+            WHERE p.kind='expense' AND p.source=? AND ABS(p.amount-?)<0.001
+              AND o.observed_at BETWEEN ? AND ? AND o.channel<>? AND o.paired=0
+            ORDER BY ABS(o.observed_at-CAST(? AS INTEGER)) ASC
+            """.trimIndent(),
+            arrayOf(source, amount.toString(), (paidAt - 20_000).toString(), (paidAt + 20_000).toString(), channel, paidAt.toString())
+        ).use { cursor ->
+            while (cursor.moveToNext()) matches += Match(
+                cursor.getString(0), cursor.getString(1), kotlin.math.abs(cursor.getLong(2) - paidAt)
+            )
+        }
+        val exact = matches.filter { it.merchant.trim().equals(merchant.trim(), ignoreCase = true) }
+        val closest = exact.firstOrNull()
+        if (closest != null) return closest.fingerprint.takeUnless { exact.getOrNull(1)?.distanceMs == closest.distanceMs }
+        val only = matches.singleOrNull() ?: return null
+        return only.fingerprint.takeIf { PaymentEvidence.sameMerchant(merchant, only.merchant, source) }
     }
 
     fun insertManual(merchant: String, amount: Double, kind: String, category: String, note: String): Boolean =
@@ -165,18 +249,6 @@ class AccountDb(context: Context) : SQLiteOpenHelper(context, "accounts.db", nul
         }
         return net
     }
-
-    fun hasRecentPayment(amount: Double, source: String, since: Long): Boolean =
-        readableDatabase.rawQuery(
-            "SELECT 1 FROM payments WHERE source=? AND ABS(amount-?)<0.001 AND paid_at>=? LIMIT 1",
-            arrayOf(source, amount.toString(), since.toString())
-        ).use { it.moveToFirst() }
-
-    fun hasRecentPayment(amount: Double, since: Long): Boolean =
-        readableDatabase.rawQuery(
-            "SELECT 1 FROM payments WHERE ABS(amount-?)<0.001 AND paid_at>=? LIMIT 1",
-            arrayOf(amount.toString(), since.toString())
-        ).use { it.moveToFirst() }
 
     fun delete(id: Long) = writableDatabase.delete("payments", "id=?", arrayOf(id.toString()))
 }
