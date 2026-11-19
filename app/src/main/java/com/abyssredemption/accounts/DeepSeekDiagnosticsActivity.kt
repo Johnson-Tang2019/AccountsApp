@@ -1,8 +1,6 @@
 package com.abyssredemption.accounts
 
 import android.app.AlertDialog
-import android.content.ActivityNotFoundException
-import android.content.Intent
 import android.os.Bundle
 import android.view.View
 import android.widget.EditText
@@ -16,8 +14,12 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import org.json.JSONObject
 import java.io.IOException
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.text.DateFormat
 import java.util.Date
+import java.util.Locale
 
 class DeepSeekDiagnosticsActivity : AppCompatActivity() {
     companion object {
@@ -28,7 +30,17 @@ class DeepSeekDiagnosticsActivity : AppCompatActivity() {
     private var fromMs = 0L
     private var toMs = 0L
     private var draft: String? = null
+    private var pendingAnalysis: String? = null
     private val preferences by lazy { getSharedPreferences("diagnostics_ai", MODE_PRIVATE) }
+    private val exportAnalysis = registerForActivityResult(ActivityResultContracts.CreateDocument("text/markdown")) { uri ->
+        val contents = pendingAnalysis
+        pendingAnalysis = null
+        if (uri == null || contents == null) return@registerForActivityResult
+        runJob("正在保存分析文件…", "无法保存分析文件。", {
+            val output = contentResolver.openOutputStream(uri, "wt") ?: throw IOException("无法打开目标文件")
+            output.bufferedWriter(Charsets.UTF_8).use { it.write(contents) }
+        }) { showStatus("分析文件已保存。在 DSH Go 上传此文件即可开始分析。") }
+    }
 
     private val exportDraft = registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         val contents = draft
@@ -61,13 +73,19 @@ class DeepSeekDiagnosticsActivity : AppCompatActivity() {
         toMs = savedInstanceState?.getLong(EXTRA_TO_MS) ?: intent.getLongExtra(EXTRA_TO_MS, System.currentTimeMillis())
         fromMs = savedInstanceState?.getLong(EXTRA_FROM_MS) ?: intent.getLongExtra(EXTRA_FROM_MS, toMs - 3_600_000L)
         val formatter = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.MEDIUM)
-        findViewById<TextView>(R.id.deepSeekRange).text = "${formatter.format(Date(fromMs))} 至 ${formatter.format(Date(toMs))}"
+        findViewById<TextView>(R.id.deepSeekRange).text = "${formatter.format(Date(fromMs))} 至 ${formatter.format(Date((toMs - 1).coerceAtLeast(fromMs)))}"
 
         findViewById<EditText>(R.id.deepSeekEndpoint).setText(preferences.getString("endpoint", DeepSeekDiagnostics.DEFAULT_ENDPOINT))
         findViewById<EditText>(R.id.deepSeekModel).setText(preferences.getString("model", DeepSeekDiagnostics.DEFAULT_MODEL))
         findViewById<View>(R.id.deepSeekBack).setOnClickListener { finish() }
-        findViewById<View>(R.id.previewForDshGo).setOnClickListener {
-            preview("DSH Go", "交给 DSH Go", ::shareWithDshGo)
+        pendingAnalysis = savedInstanceState?.getString("pending_analysis")
+        findViewById<View>(R.id.exportDshGoAnalysis).setOnClickListener {
+            preview("导出分析文件", "保存文件", DeepSeekDiagnostics::analysisDocument) { _, contents ->
+                pendingAnalysis = contents
+                val suffix = DateTimeFormatter.ofPattern("uuuuMMdd-HHmmss", Locale.ROOT)
+                    .withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(fromMs))
+                exportAnalysis.launch("Accounts-analysis-$suffix.md")
+            }
         }
         findViewById<View>(R.id.previewForDeepSeekApi).setOnClickListener { previewApiRequest() }
         findViewById<View>(R.id.exportDeepSeekDraft).setOnClickListener { exportDraft.launch("accounts-rule-draft.json") }
@@ -78,6 +96,7 @@ class DeepSeekDiagnosticsActivity : AppCompatActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putLong(EXTRA_FROM_MS, fromMs)
         outState.putLong(EXTRA_TO_MS, toMs)
+        pendingAnalysis?.let { outState.putString("pending_analysis", it) }
         val answer = findViewById<TextView>(R.id.deepSeekOutput)
         if (answer.visibility == View.VISIBLE) outState.putString("answer", answer.text.toString())
         super.onSaveInstanceState(outState)
@@ -101,7 +120,9 @@ class DeepSeekDiagnosticsActivity : AppCompatActivity() {
             keyInput.error = "请输入有效的 API Key。"
             return
         }
-        preview(endpoint.authority, "发送并分析") { report ->
+        preview("确认发送诊断数据", "发送并分析", { json ->
+            "接收方 ${endpoint.authority}\n\n${DeepSeekDiagnostics.INSTRUCTIONS}\n\n$json"
+        }) { report, _ ->
             preferences.edit().putString("endpoint", endpoint.toExternalForm()).putString("model", model).apply()
             keyInput.text?.clear()
             runJob("正在请求 DeepSeek 分析…", "DeepSeek 分析失败，请检查网络和接口配置。", {
@@ -110,7 +131,12 @@ class DeepSeekDiagnosticsActivity : AppCompatActivity() {
         }
     }
 
-    private fun preview(destination: String, action: String, submit: (String) -> Unit) {
+    private fun preview(
+        title: String,
+        action: String,
+        formatPreview: (String) -> String,
+        submit: (json: String, rendered: String) -> Unit
+    ) {
         runJob("正在生成脱敏预览…", "无法读取诊断记录。", {
             val report = RecognitionLogger.report(applicationContext, fromMs, toMs, DeepSeekDiagnostics.EVENT_LIMIT)
             DeepSeekDiagnostics.projectReport(report, fromMs, toMs)
@@ -122,35 +148,21 @@ class DeepSeekDiagnosticsActivity : AppCompatActivity() {
             }
             showStatus("")
             val json = projection.toString(2)
+            val rendered = formatPreview(json)
             val content = TextView(this).apply {
                 val padding = (22 * resources.displayMetrics.density).toInt()
                 setPadding(padding, padding / 2, padding, padding / 2)
                 setTextColor(getColor(R.color.text_primary))
                 textSize = 13f
-                text = "接收方 $destination\n\n${DeepSeekDiagnostics.INSTRUCTIONS}\n\n$json"
+                text = rendered
                 setTextIsSelectable(true)
             }
             PinkDialogs.show(AlertDialog.Builder(this)
-                .setTitle("确认发送诊断数据")
+                .setTitle(title)
                 .setView(ScrollView(this).apply { addView(content) })
                 .setNegativeButton("取消", null)
-                .setPositiveButton(action) { _, _ -> submit(json) }
+                .setPositiveButton(action) { _, _ -> submit(json, rendered) }
                 .create())
-        }
-    }
-
-    private fun shareWithDshGo(report: String) {
-        val share = Intent(Intent.ACTION_SEND).apply {
-            type = "text/plain"
-            setPackage(DeepSeekDiagnostics.DSH_GO_PACKAGE)
-            putExtra(Intent.EXTRA_TEXT, "${DeepSeekDiagnostics.INSTRUCTIONS}\n\n$report")
-        }
-        try {
-            startActivity(share)
-        } catch (_: ActivityNotFoundException) {
-            showStatus("找不到支持接收分享的 DSH Go，请安装或更新 DSH Go。")
-        } catch (_: SecurityException) {
-            showStatus("系统未允许此次 DSH Go 分享。")
         }
     }
 
@@ -170,7 +182,7 @@ class DeepSeekDiagnosticsActivity : AppCompatActivity() {
     }
 
     private fun <T> runJob(progress: String, failure: String, task: () -> T, onSuccess: (T) -> Unit) {
-        val controls = listOf(R.id.previewForDshGo, R.id.previewForDeepSeekApi, R.id.exportDeepSeekDraft)
+        val controls = listOf(R.id.exportDshGoAnalysis, R.id.previewForDeepSeekApi, R.id.exportDeepSeekDraft)
         controls.forEach { findViewById<View>(it).isEnabled = false }
         val spinner = findViewById<ProgressBar>(R.id.deepSeekProgress)
         spinner.visibility = View.VISIBLE

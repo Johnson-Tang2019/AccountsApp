@@ -18,9 +18,9 @@
         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
             <TextView android:id="@+id/deepSeekRange" android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:textColor="@color/text_primary" android:textSize="14sp" />
-            <com.google.android.material.button.MaterialButton android:id="@+id/previewForDshGo"
+            <com.google.android.material.button.MaterialButton android:id="@+id/exportDshGoAnalysis"
                 android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp"
-                android:minHeight="48dp" android:text="预览并交给 DSH Go" android:textAllCaps="false" app:cornerRadius="16dp" />
+                android:minHeight="48dp" android:text="导出 DSH Go 分析文件" android:textAllCaps="false" app:cornerRadius="16dp" />
 
             <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="14dp"
                 android:background="@drawable/bg_list" android:orientation="vertical" android:padding="14dp">

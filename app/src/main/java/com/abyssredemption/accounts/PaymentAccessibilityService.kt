@@ -46,16 +46,11 @@ class PaymentAccessibilityService : AccessibilityService() {
     private val historyPageWords = listOf("交易记录", "账单历史", "全部订单", "订单列表")
     private val prePaymentWords = listOf("确认付款", "立即付款", "输入支付密码", "使用密码", "确认支付")
     private val appLockWords = listOf("应用锁", "验证应用锁", "请输入应用锁密码", "验证指纹", "隐私密码")
-    private data class ScreenObservation(
-        val source: String, val amount: Double, val merchant: String, val fingerprint: String,
-        val firstSeen: Long, var lastSeenElapsed: Long
-    )
-    private val previousScreens = mutableMapOf<String, ScreenObservation>()
+    private val screenPayments = ScreenPaymentTracker()
     private val handler = Handler(Looper.getMainLooper())
     private var pendingPackage: String? = null
     private val parseTask = Runnable { pendingPackage?.let(::parseCurrentWindow) }
     private var overlayView: ImageView? = null
-    private var lastConfirmationFingerprint: String? = null
     private var pendingWechatAmount: String? = null
     private var pendingWechatMerchant: String? = null
     private var pendingWechatUntil = 0L
@@ -72,6 +67,12 @@ class PaymentAccessibilityService : AccessibilityService() {
                 Intent.ACTION_SCREEN_ON, Intent.ACTION_USER_PRESENT -> updateOverlayForScreenState()
                 ACTION_SETTINGS_CHANGED -> updateOverlayForScreenState()
                 ACTION_PAYMENT_CONFIRMED -> {
+                    val observedPackage = intent.getStringExtra("observedPackage")
+                    val fingerprint = intent.getStringExtra("fingerprint")
+                    if (observedPackage != null && observedPackage in allowedPackages && fingerprint != null) {
+                        screenPayments.providerConfirmed(observedPackage, fingerprint, android.os.SystemClock.elapsedRealtime())
+                    }
+                    if (intent.getBooleanExtra("alreadyRecorded", false)) return
                     animateOverlaySuccess()
                     sendRecordedNotification(
                         intent.getStringExtra("source") ?: "自动记账",
@@ -162,13 +163,11 @@ class PaymentAccessibilityService : AccessibilityService() {
         val hasResultAction = resultPageWords.any(texts::contains)
         val hasHistoryMarker = historyPageWords.any(page::contains)
         val amount = findAmount(texts, page)
+        if (!hasSuccess && !hasHistoryMarker && amount != null && hasPaymentControls(texts)) {
+            screenPayments.startPayment(ScreenPaymentTracker.Window(expectedPackage, root.windowId))
+            return
+        }
         if (hasSuccess && hasResultAction && !hasHistoryMarker && amount != null) {
-            RecognitionLogger.log(
-                this,
-                "third_party_candidate_$expectedPackage",
-                "发现第三方支付结果页：包名=$expectedPackage，节点=${texts.size}",
-                0
-            )
             parseCurrentWindow(expectedPackage)
         }
     }
@@ -218,6 +217,7 @@ class PaymentAccessibilityService : AccessibilityService() {
         }
         val hasSuccessText = texts.any { PaymentEvidence.startsWithMarker(it, successWords) }
         val isPrePaymentPage = prePaymentWords.any(page::contains)
+        val window = ScreenPaymentTracker.Window(actualPackage, root.windowId)
         if (visibleAmount != null && (isPrePaymentPage || hasSuccessText)) markPaymentContext(actualPackage, now = System.currentTimeMillis())
         val resultAction = resultPageWords.any { word -> texts.any { it == word } }
         val historyPage = historyPageWords.any { word -> texts.any { it == word } } ||
@@ -234,7 +234,6 @@ class PaymentAccessibilityService : AccessibilityService() {
             page.contains("微信支付") &&
             !isPrePaymentPage
         if (historyPage) {
-            previousScreens.remove(actualPackage)
             clearPendingWechatPayment()
             RecognitionLogger.event(this, "screen", "history_page", actualPackage,
                 mapOf("historyPage" to true, "windowId" to root.windowId), 1500)
@@ -242,7 +241,9 @@ class PaymentAccessibilityService : AccessibilityService() {
             return
         }
         if (isPrePaymentPage) {
-            previousScreens.remove(actualPackage)
+            if (!hasSuccessText && visibleAmount != null && hasPaymentControls(texts)) {
+                screenPayments.startPayment(window)
+            }
             RecognitionLogger.event(this, "screen", "pre_payment", actualPackage,
                 mapOf("prePayment" to true, "amountPresent" to (visibleAmount != null), "windowId" to root.windowId), 1500)
             if (actualPackage == "com.tencent.mm") {
@@ -287,28 +288,43 @@ class PaymentAccessibilityService : AccessibilityService() {
             ?: pendingWechatMerchant?.takeIf { actualPackage == "com.tencent.mm" && isWechatFastResultPage }
             ?: "${sourceName}商户"
         val elapsed = android.os.SystemClock.elapsedRealtime()
-        previousScreens.entries.removeAll { elapsed - it.value.lastSeenElapsed > 45_000 }
-        val observation = previousScreens[actualPackage]?.takeIf {
-            it.source == sourceName && it.amount == value && PaymentEvidence.sameMerchant(it.merchant, merchant, sourceName)
-        } ?: ScreenObservation(sourceName, value, merchant, java.util.UUID.randomUUID().toString(), now, elapsed)
-            .also { previousScreens[actualPackage] = it }
-        observation.lastSeenElapsed = elapsed
+        val providerApp = actualPackage in allowedPackages
+        clearPendingWechatPayment()
+        clearPaymentContext(actualPackage)
+        val observation = when (val match = screenPayments.observe(window, providerApp, value, sourceName, merchant, now, elapsed)) {
+            is ScreenPaymentTracker.Result.New -> match.observation
+            is ScreenPaymentTracker.Result.Replay -> {
+                if (!match.observation.replayLogged) {
+                    match.observation.replayLogged = true
+                    evidence["attemptId"] = match.observation.fingerprint
+                    RecognitionLogger.event(this, "screen", "replay", actualPackage, evidence)
+                }
+                return
+            }
+            is ScreenPaymentTracker.Result.MerchantReturn -> {
+                evidence["attemptId"] = match.provider.fingerprint
+                evidence["amountMatch"] = true
+                evidence["dedupWindowMs"] = 12_000
+                RecognitionLogger.event(this, "screen", "merchant_return_duplicate", actualPackage, evidence)
+                return
+            }
+        }
         val fingerprint = observation.fingerprint
         val result = AccountDb(this).use {
-            it.recordAutomaticPayment(merchant, value, sourceName, observation.firstSeen, "screen", fingerprint, true)
+            it.recordAutomaticPayment(merchant, value, sourceName, observation.paidAtMs, "screen", fingerprint, true)
         }
         evidence["attemptId"] = fingerprint
         RecognitionLogger.event(this, "screen", result.name.lowercase(), actualPackage, evidence, 1500)
-        clearPendingWechatPayment()
-        clearPaymentContext(actualPackage)
-        if (result == AutoPaymentResult.CONFIRMATION_REQUIRED && lastConfirmationFingerprint != fingerprint) {
-            lastConfirmationFingerprint = fingerprint
+        if (providerApp && (result == AutoPaymentResult.RECORDED || result == AutoPaymentResult.CROSS_CHANNEL_DUPLICATE)) {
+            screenPayments.providerRecorded(window, observation, elapsed)
+        }
+        if (result == AutoPaymentResult.CONFIRMATION_REQUIRED) {
             startActivity(Intent(this, DuplicatePaymentActivity::class.java).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS)
                 putExtra("merchant", merchant)
                 putExtra("amount", amount)
                 putExtra("source", sourceName)
-                putExtra("paidAt", observation.firstSeen)
+                putExtra("paidAt", observation.paidAtMs)
                 putExtra("fingerprint", fingerprint)
                 putExtra("observedPackage", actualPackage)
             })
@@ -318,6 +334,9 @@ class PaymentAccessibilityService : AccessibilityService() {
             sendRecordedNotification(sourceName, merchant, amount)
         }
     }
+
+    private fun hasPaymentControls(texts: List<String>): Boolean =
+        texts.any { PaymentEvidence.startsWithMarker(it, prePaymentWords) }
 
     private fun markPaymentContext(packageName: String, now: Long = System.currentTimeMillis()) {
         if (now > (paymentContextUntil[packageName] ?: 0L)) {

@@ -75,6 +75,7 @@ object RecognitionLogger {
         "recorded" to "已自动记账",
         "replay" to "忽略重复上报的支付结果",
         "cross_channel_duplicate" to "已合并无障碍和通知的重复记录",
+        "merchant_return_duplicate" to "返回商家后显示同一笔付款，已跳过",
         "confirmation_required" to "等待确认相同金额记录",
         "stale_message" to "忽略过期通知",
         "non_expense_message" to "忽略非支出通知",

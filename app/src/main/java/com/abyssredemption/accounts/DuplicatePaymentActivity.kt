@@ -26,12 +26,17 @@ class DuplicatePaymentActivity : AppCompatActivity() {
             }
             RecognitionLogger.event(this, "screen", result.name.lowercase(),
                 intent.getStringExtra("observedPackage"), mapOf("attemptId" to fingerprint))
-            if (result == AutoPaymentResult.RECORDED) sendBroadcast(android.content.Intent(PaymentAccessibilityService.ACTION_PAYMENT_CONFIRMED).apply {
-                setPackage(packageName)
-                putExtra("merchant", merchant)
-                putExtra("amount", amount)
-                putExtra("source", source)
-            })
+            if (result == AutoPaymentResult.RECORDED || result == AutoPaymentResult.CROSS_CHANNEL_DUPLICATE) {
+                sendBroadcast(android.content.Intent(PaymentAccessibilityService.ACTION_PAYMENT_CONFIRMED).apply {
+                    setPackage(packageName)
+                    putExtra("merchant", merchant)
+                    putExtra("amount", amount)
+                    putExtra("source", source)
+                    putExtra("observedPackage", intent.getStringExtra("observedPackage"))
+                    putExtra("fingerprint", fingerprint)
+                    putExtra("alreadyRecorded", result == AutoPaymentResult.CROSS_CHANNEL_DUPLICATE)
+                })
+            }
             finish()
         }
         setFinishOnTouchOutside(false)
