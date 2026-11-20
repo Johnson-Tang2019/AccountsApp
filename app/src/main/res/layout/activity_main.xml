@@ -78,6 +78,16 @@
                         <TextView android:id="@+id/accumulatedRemaining" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="¥0.00" android:textColor="@color/pink_dark" android:textSize="17sp" android:textStyle="bold" />
                     </LinearLayout>
                 </LinearLayout>
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp" android:background="@drawable/bg_category" android:orientation="vertical"
+                    android:paddingHorizontal="12dp" android:paddingVertical="8dp">
+                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:text="@string/remaining_daily_budget_label" android:textColor="@color/text_primary"
+                        android:textSize="12sp" />
+                    <TextView android:id="@+id/remainingDailyBudget" android:layout_width="match_parent"
+                        android:layout_height="wrap_content" android:layout_marginTop="2dp"
+                        android:textColor="@color/pink_dark" android:textSize="14sp" android:textStyle="bold" />
+                </LinearLayout>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 

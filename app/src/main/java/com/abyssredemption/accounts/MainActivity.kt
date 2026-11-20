@@ -98,7 +98,10 @@ class MainActivity : AppCompatActivity() {
         val budgetStats = db.budgetStats(monthlyBudget, currentBalance, start)
         val budgetUsedAmount = (monthlyBudget - currentBalance).coerceAtLeast(0.0)
         val today = Calendar.getInstance()
-        val elapsedRatio = today.get(Calendar.DAY_OF_MONTH).toDouble() / today.getActualMaximum(Calendar.DAY_OF_MONTH).toDouble()
+        val dayOfMonth = today.get(Calendar.DAY_OF_MONTH)
+        val daysInMonth = today.getActualMaximum(Calendar.DAY_OF_MONTH)
+        val daysRemaining = daysInMonth - dayOfMonth
+        val elapsedRatio = dayOfMonth.toDouble() / daysInMonth
         val remainingRatio = prefs.getInt("remaining_ratio", 20) / 100.0
         val spendableBudget = monthlyBudget * (1.0 - remainingRatio)
         val expectedUsed = spendableBudget * elapsedRatio
@@ -111,6 +114,12 @@ class MainActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.budgetPace).text = "今日建议 ${(expectedProgress / 10.0)}% · 预留 ${(remainingRatio * 100).toInt()}% · ¥${money.format(expectedUsed)}"
         findViewById<TextView>(R.id.monthRemaining).text = "¥${money.format(budgetStats.monthRemaining)}"
         findViewById<TextView>(R.id.accumulatedRemaining).text = "¥${money.format(budgetStats.accumulatedRemaining)}"
+        findViewById<TextView>(R.id.remainingDailyBudget).text = if (daysRemaining > 0) {
+            val dailyAmount = budgetStats.monthRemaining.coerceAtLeast(0.0) / daysRemaining
+            getString(R.string.remaining_daily_budget_value, money.format(dailyAmount), daysRemaining)
+        } else {
+            getString(R.string.remaining_daily_budget_month_end)
+        }
         findViewById<ProgressBar>(R.id.budgetProgress).apply {
             max = 1000
             progress = if (monthlyBudget <= 0) 0 else ((budgetUsedAmount / monthlyBudget) * 1000).toInt().coerceIn(0, 1000)

@@ -19,8 +19,8 @@ android {
         applicationId = "com.abyssredemption.accounts"
         minSdk = 26
         targetSdk = 35
-        versionCode = 49
-        versionName = "1.1.3"
+        versionCode = 50
+        versionName = "1.1.4"
     }
 
     compileOptions {
